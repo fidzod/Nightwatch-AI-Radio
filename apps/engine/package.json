@@ -1,0 +1,19 @@
+{
+  "name": "@airadio/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/server.ts",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@airadio/db": "workspace:*",
+    "@anthropic-ai/sdk": "^0.133.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.10.0"
+  }
+}
