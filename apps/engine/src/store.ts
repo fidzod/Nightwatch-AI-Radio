@@ -215,6 +215,19 @@ export function ensurePresenter(): number {
     .id;
 }
 
+/**
+ * Looks up the voice chosen for a presenter in the web UI's Presenters page
+ * (`presenters.elevenlabs_voice_id`). Returns null if the presenter has none
+ * set yet — callers should fall back to `config.elevenLabsVoiceId` in that
+ * case, not fail the generation over it.
+ */
+export function getPresenterVoiceId(presenterId: number): string | null {
+  const row = getDb()
+    .prepare("SELECT elevenlabs_voice_id FROM presenters WHERE id = ?")
+    .get(presenterId) as { elevenlabs_voice_id: string | null } | undefined;
+  return row?.elevenlabs_voice_id ?? null;
+}
+
 export type ClipStatus = "pending" | "rendering" | "ready" | "failed" | "used";
 
 /** Opens a `generated_clips` row at status 'pending'; returns its id. */

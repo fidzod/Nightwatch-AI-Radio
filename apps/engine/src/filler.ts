@@ -21,6 +21,7 @@ import {
   createClip,
   ensureCollection,
   ensurePresenter,
+  getPresenterVoiceId,
   updateClip,
 } from "./store.ts";
 
@@ -78,12 +79,17 @@ export async function runFillerOnce(
   console.log(`[filler] clip ${clipId} script: ${JSON.stringify(scriptText)}`);
 
   // --- text to speech -------------------------------------------------------
+  // Prefer the voice chosen for this presenter in the web UI (Presenters page);
+  // fall back to the stock test voice only if none has been set yet.
+  const voiceId = getPresenterVoiceId(presenterId) ?? undefined;
+
   let rendered;
   try {
     rendered = await renderSpeech({
       text: scriptText,
       triggerType: "filler",
       clipId,
+      voiceId,
     });
   } catch (err) {
     const message = errorMessage(err);
