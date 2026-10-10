@@ -94,8 +94,7 @@ function handleNextMusic(res: ServerResponse): void {
     presenter: served.active.presenter.name,
   };
   console.log(
-    `[next-music] -> ${body.uri} (${body.collection}, ${served.durationSeconds}s, ` +
-      `boundary at ${served.endsAt.toISOString()})`,
+    `[next-music] -> ${body.uri} (${body.collection}, ${served.track.duration_seconds ?? "?"}s)`,
   );
   sendJson(res, 200, body);
 }

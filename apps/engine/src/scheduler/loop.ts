@@ -39,8 +39,9 @@ import {
   listUndeliveredClips,
   loadScheduleSnapshot,
   writeStationState,
+  type TrackRow,
 } from "../store.ts";
-import { MusicDirector, type BoundaryEvent, type ServedTrack } from "./musicDirector.ts";
+import { MusicDirector, type BoundaryEvent } from "./musicDirector.ts";
 import { resolveActiveSlot, type ScheduleSnapshot } from "./resolveActiveSlot.ts";
 import {
   PRIORITY,
@@ -217,15 +218,21 @@ export class Scheduler {
    * collection changeover need no separate reload signal. Returns null when the
    * station is off air or the active collection is empty — the route answers
    * 503 and LiquidSoap's `mksafe` plays silence.
+   *
+   * Note this is the track LiquidSoap is *prefetching* — not necessarily what
+   * is audible this instant (see musicDirector.ts). It's still the right
+   * thing to hand back here: LiquidSoap needs a path to queue regardless, and
+   * `MusicDirector.current()` is what the live page reads for "now playing".
    */
-  takeNextTrack(): ServedTrack | null {
+  takeNextTrack(): { track: TrackRow; active: ActiveSlot } | null {
     const snapshot = loadScheduleSnapshot();
     const active = resolveActiveSlot(snapshot, this.clock());
     if (active === null) {
       this.music.reset();
       return null;
     }
-    return this.music.take(active) ?? null;
+    const track = this.music.take(active);
+    return track === undefined ? null : { track, active };
   }
 
   // --- the tick -------------------------------------------------------------

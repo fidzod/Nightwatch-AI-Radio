@@ -273,7 +273,18 @@ async function main(): Promise<void> {
         trackEndsAt = new Date(now.getTime() + 5_000);
       } else {
         pulls += 1;
-        trackEndsAt = served.endsAt;
+        // MusicDirector promotes "served" to "current" one call later than it
+        // was handed out (it only learns a track actually started playing
+        // when the *next* take() call happens — see musicDirector.ts). So
+        // current()?.endsAt is the boundary onMusicBoundary actually reports;
+        // staying driven by that (rather than independently computing one
+        // from the just-served track) keeps this loop's clock-stepping in
+        // sync with it. Only the very first call has nothing yet to promote,
+        // so it falls back to the served track's own duration.
+        const current = scheduler.music.current();
+        trackEndsAt =
+          current?.endsAt ??
+          new Date(now.getTime() + (served.track.duration_seconds ?? 180) * 1000);
       }
     }
     await scheduler.tick();
