@@ -1,0 +1,10 @@
+{
+  "name": "airadio",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Nightwatch Radio — AI-powered personal internet radio station",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

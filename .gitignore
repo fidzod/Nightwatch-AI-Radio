@@ -1,0 +1,27 @@
+# secrets
+.env
+
+# nix
+.direnv/
+
+# node
+node_modules/
+.pnpm-store/
+dist/
+build/
+.svelte-kit/
+
+# data / generated audio (large, local-only)
+data/*.sqlite3
+data/*.sqlite3-*
+audio/library/*
+audio/generated/*
+!audio/library/.gitkeep
+!audio/generated/.gitkeep
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
