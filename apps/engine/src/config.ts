@@ -82,13 +82,27 @@ export function requireEnv(name: string): string {
   return value;
 }
 
+function floatEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export const config = {
   httpPort: intEnv("ENGINE_HTTP_PORT", 7777),
   liquidsoapTelnetHost: process.env.LIQUIDSOAP_TELNET_HOST ?? "127.0.0.1",
   liquidsoapTelnetPort: intEnv("LIQUIDSOAP_TELNET_PORT", 1234),
 
-  /** Phase 2 uses a single hardcoded collection; Phase 3 resolves this from
-   *  `schedule_slots`. */
+  /** Override the SQLite file. Only used by the simulation harness, which runs
+   *  the whole scheduler against a throwaway copy so a test day can't write
+   *  into the live station's database. Empty = @airadio/db's default path. */
+  dbPath: process.env.AIRADIO_DB_PATH ?? "",
+
+  /** Bootstrap-only: if the `collections` table is completely empty (fresh
+   *  clone), seed this collection from the mp3s on disk so /next-music has
+   *  something to serve before the web UI has been used. Never re-created once
+   *  the user has any collection of their own. */
   testCollectionName: "test-collection",
   libraryDir: join(REPO_ROOT, "audio", "library"),
   generatedDir: join(REPO_ROOT, "audio", "generated"),
@@ -107,7 +121,41 @@ export const config = {
   elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM",
   elevenLabsOutputFormat: process.env.ELEVENLABS_OUTPUT_FORMAT ?? "mp3_44100_128",
 
-  /** When > 0, the server fires a filler generation on this interval. Phase 2
-   *  only — Phase 3 replaces it with the real trigger-rule scheduler loop. */
+  // --- scheduler (Phase 3) ---------------------------------------------------
+
+  /** Scheduler tick. The plan specifies ~5s. */
+  tickSeconds: intEnv("SCHEDULER_TICK_SECONDS", 5),
+  /** How far ahead deterministic triggers are generated (plan: ~180s). */
+  lookaheadSeconds: intEnv("SCHEDULER_LOOKAHEAD_SECONDS", 180),
+  /** A clip is pushed to LiquidSoap this many seconds before its fire time —
+   *  the push is picked up at the next boundary, so a small lead keeps speech
+   *  landing on time rather than late. */
+  deliverLeadSeconds: floatEnv("SCHEDULER_DELIVER_LEAD_SECONDS", 4),
+  /** A 'ready' clip whose fire time is this far in the past is abandoned
+   *  (marked 'failed') rather than aired wildly out of context. */
+  deliverGraceSeconds: floatEnv("SCHEDULER_DELIVER_GRACE_SECONDS", 90),
+  /** Two deterministic triggers this close together would stack back-to-back,
+   *  so the lower-priority one is dropped; a probabilistic roll inside this
+   *  window of any deterministic trigger is skipped entirely. */
+  stackGuardSeconds: floatEnv("SCHEDULER_STACK_GUARD_SECONDS", 90),
+  /** Sign-off airs this far before the final slot's end, so it goes out while
+   *  the station is still on air. */
+  signOffLeadSeconds: floatEnv("SCHEDULER_SIGN_OFF_LEAD_SECONDS", 30),
+  /** Per-music-boundary probability of a song intro (plan: ~15%). */
+  songIntroProbability: floatEnv("SONG_INTRO_PROBABILITY", 0.15),
+  /** Per-boundary probability of a filler one-liner, rolled only where the
+   *  song intro did not fire (plan: ~10%). */
+  fillerProbability: floatEnv("FILLER_PROBABILITY", 0.1),
+  /** Minimum gap between two probabilistic clips, so they never land
+   *  back-to-back on consecutive short tracks. */
+  probabilisticCooldownSeconds: floatEnv("PROBABILISTIC_COOLDOWN_SECONDS", 240),
+  /** How many mock headlines a news read is built from (template says 2-4). */
+  newsItemCount: intEnv("NEWS_ITEM_COUNT", 3),
+
+  /** When > 0, the server fires a filler generation on this interval. A Phase 2
+   *  debug hook, kept because it is still the quickest way to smoke-test the
+   *  generation chain without waiting on the scheduler. */
   fillerIntervalSeconds: intEnv("FILLER_INTERVAL_SECONDS", 0),
+  /** Set to 0 to boot the HTTP server without the scheduler loop (music only). */
+  schedulerEnabled: process.env.SCHEDULER_ENABLED !== "0",
 } as const;

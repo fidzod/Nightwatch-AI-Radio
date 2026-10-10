@@ -3,9 +3,11 @@
 // are owned by the user and editable from /presenters — the engine reads the
 // table, not this file.
 //
-// Wren's system prompt is the user's original draft verbatim (matching
-// apps/engine/src/personas/wren.ts); Juno and Marlowe are the deltas the plan
-// specifies.
+// Wren's system prompt is the user's original draft verbatim; Juno and Marlowe
+// are the deltas the plan specifies. This file is the only copy — the engine
+// resolves presenters from the `presenters` table alone (Phase 3 deleted the
+// hardcoded persona constant it used to carry), so edits made in the UI take
+// effect on the next generated clip.
 
 export type PersonaSeed = {
 	name: string;

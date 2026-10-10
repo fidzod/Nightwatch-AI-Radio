@@ -1,0 +1,227 @@
+// When each of the seven moments fires. Pure functions over a schedule
+// snapshot and an instant — no DB writes, no API calls, no wall clock — so the
+// whole rule matrix can be driven through a simulated day in milliseconds
+// (see src/test/simulateDay.ts).
+//
+// From the plan's §1:
+//   1. song intro   probabilistic per music-track boundary (~15%), with cooldown
+//   2. changeover   deterministic, once per boundary where collection/presenter
+//                   actually changes, pre-rendered ~60-90s ahead
+//   3. hour open    deterministic, every hour at :00 while a slot is active
+//   4. news         deterministic, chained right after #3
+//   5. weather      deterministic, chained right after #4
+//   6. sign-off     deterministic, once, at the end of the broadcast day
+//   7. filler       probabilistic (~10%), only where #1 didn't fire
+//
+// Priority: sign-off > changeover > hour-open/news/weather > intro/filler. A
+// deterministic trigger firing skips the probabilistic roll, so segments never
+// stack — enforced here by `suppressStacked` (between deterministic triggers)
+// and by `deterministicNear` (between deterministic and probabilistic ones).
+
+import { config } from "../config.ts";
+import {
+  nextScheduleChange,
+  resolveActiveSlot,
+  sameAir,
+  type ScheduleSnapshot,
+} from "./resolveActiveSlot.ts";
+import type { ActiveSlot, TriggerType } from "./types.ts";
+
+export const PRIORITY: Record<TriggerType, number> = {
+  sign_off: 40,
+  changeover: 30,
+  hour_open: 20,
+  news: 20,
+  weather: 20,
+  song_intro: 10,
+  filler: 10,
+};
+
+export interface TriggerCandidate {
+  triggerType: TriggerType;
+  /** Stable identity of this trigger instance: type + the instant it is for.
+   *  Two ticks noticing the same trigger produce the same key, so it is
+   *  generated exactly once (store.clipExistsForDedupeKey). */
+  dedupeKey: string;
+  /** When the clip should air. */
+  fireAt: Date;
+  priority: number;
+  /** Who is on air at `fireAt` — whose system_prompt and voice get used. */
+  active: ActiveSlot;
+  /** Chained moments air in index order within a chain (the hour triad). */
+  chainId?: string;
+  chainIndex: number;
+  /** changeover only: the collection being handed off from. */
+  outgoingCollectionName?: string;
+}
+
+function iso(d: Date): string {
+  return d.toISOString();
+}
+
+/** The next exact top-of-hour at or after `from`. */
+export function nextTopOfHour(from: Date): Date {
+  const next = new Date(from);
+  next.setMinutes(0, 0, 0);
+  if (next.getTime() <= from.getTime()) {
+    next.setTime(next.getTime() + 3_600_000);
+  }
+  return next;
+}
+
+/**
+ * Every deterministic trigger whose fire time falls inside
+ * [now, now + horizonMs] — already de-stacked, highest priority first.
+ */
+export function collectDeterministic(
+  snapshot: ScheduleSnapshot,
+  now: Date,
+  horizonMs = config.lookaheadSeconds * 1000,
+): TriggerCandidate[] {
+  const candidates: TriggerCandidate[] = [];
+  const active = resolveActiveSlot(snapshot, now);
+  const horizonEnd = now.getTime() + horizonMs;
+
+  // --- sign-off: the current block ends and nothing follows -----------------
+  if (active !== null) {
+    const afterEnd = resolveActiveSlot(
+      snapshot,
+      new Date(active.endsAt.getTime() + 1_000),
+    );
+    if (afterEnd === null) {
+      const fireAt = new Date(
+        active.endsAt.getTime() - config.signOffLeadSeconds * 1000,
+      );
+      if (fireAt.getTime() >= now.getTime() && fireAt.getTime() <= horizonEnd) {
+        candidates.push({
+          triggerType: "sign_off",
+          dedupeKey: `sign_off:${iso(active.endsAt)}`,
+          fireAt,
+          priority: PRIORITY.sign_off,
+          active,
+          chainIndex: 0,
+        });
+      }
+    }
+  }
+
+  // --- changeover: presenter or collection actually changes ----------------
+  const change = nextScheduleChange(snapshot, now, horizonMs);
+  if (
+    change !== null &&
+    change.before !== null &&
+    change.after !== null &&
+    !sameAir(change.before, change.after)
+  ) {
+    candidates.push({
+      triggerType: "changeover",
+      dedupeKey: `changeover:${iso(change.at)}`,
+      // Airs at the boundary itself: the handoff marks the change, it doesn't
+      // pre-announce it. Generation starts up to `lookaheadSeconds` earlier,
+      // which covers the plan's "pre-rendered ~60-90s ahead".
+      fireAt: change.at,
+      priority: PRIORITY.changeover,
+      // The incoming presenter speaks — by the time it airs the hour is
+      // theirs, and the template is written from the arriving side.
+      active: change.after,
+      chainIndex: 0,
+      outgoingCollectionName: change.before.collection.name,
+    });
+  }
+
+  // --- hour open -> news -> weather, as one chain --------------------------
+  const hourAt = nextTopOfHour(now);
+  if (hourAt.getTime() <= horizonEnd) {
+    const hourActive = resolveActiveSlot(snapshot, hourAt);
+    if (hourActive !== null) {
+      const chainId = `hour:${iso(hourAt)}`;
+      const triad: TriggerType[] = ["hour_open", "news", "weather"];
+      triad.forEach((triggerType, chainIndex) => {
+        candidates.push({
+          triggerType,
+          dedupeKey: `${triggerType}:${iso(hourAt)}`,
+          fireAt: hourAt,
+          priority: PRIORITY[triggerType],
+          active: hourActive,
+          chainId,
+          chainIndex,
+        });
+      });
+    }
+  }
+
+  return suppressStacked(candidates);
+}
+
+/**
+ * Drops any candidate that would air within `stackGuardSeconds` of a
+ * higher-priority one. The station's slots start on the hour, so a changeover
+ * and an hour-open are routinely the same instant — this is what keeps the
+ * listener from getting a handoff and a time check back-to-back. Members of a
+ * surviving chain are kept together (the triad is one segment, not three
+ * stacked ones).
+ */
+export function suppressStacked(
+  candidates: TriggerCandidate[],
+): TriggerCandidate[] {
+  const ordered = [...candidates].sort(
+    (a, b) => b.priority - a.priority || a.fireAt.getTime() - b.fireAt.getTime(),
+  );
+  const guardMs = config.stackGuardSeconds * 1000;
+  const kept: TriggerCandidate[] = [];
+  const droppedChains = new Set<string>();
+
+  for (const candidate of ordered) {
+    if (candidate.chainId && droppedChains.has(candidate.chainId)) continue;
+
+    const clash = kept.find(
+      (k) =>
+        k.chainId !== candidate.chainId &&
+        Math.abs(k.fireAt.getTime() - candidate.fireAt.getTime()) < guardMs,
+    );
+    if (clash) {
+      if (candidate.chainId) droppedChains.add(candidate.chainId);
+      continue;
+    }
+    kept.push(candidate);
+  }
+
+  return kept.sort(
+    (a, b) =>
+      a.fireAt.getTime() - b.fireAt.getTime() || a.chainIndex - b.chainIndex,
+  );
+}
+
+export interface ProbabilisticRollInput {
+  /** The music boundary being rolled for (end of the track just served). */
+  boundaryAt: Date;
+  /** True if any deterministic trigger airs within the stack guard of it. */
+  deterministicNear: boolean;
+  /** Is there a next track to introduce? */
+  hasUpcomingTrack: boolean;
+  /** Fire time of the last probabilistic clip, for the cooldown. */
+  lastProbabilisticAt: Date | undefined;
+  random: () => number;
+}
+
+/**
+ * Rolls the two probabilistic triggers for one music boundary, in the plan's
+ * order: song intro first, filler only if the intro didn't fire.
+ */
+export function rollProbabilistic(
+  input: ProbabilisticRollInput,
+): "song_intro" | "filler" | null {
+  if (input.deterministicNear) return null;
+
+  if (input.lastProbabilisticAt !== undefined) {
+    const sinceMs =
+      input.boundaryAt.getTime() - input.lastProbabilisticAt.getTime();
+    if (sinceMs < config.probabilisticCooldownSeconds * 1000) return null;
+  }
+
+  if (input.hasUpcomingTrack && input.random() < config.songIntroProbability) {
+    return "song_intro";
+  }
+  if (input.random() < config.fillerProbability) return "filler";
+  return null;
+}

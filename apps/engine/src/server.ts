@@ -1,26 +1,32 @@
-// The engine's HTTP surface. Uses node:http directly — there is one real
-// route plus two test hooks, so a framework would be a dependency without a job.
+// The engine's HTTP surface. Uses node:http directly — there are two real
+// routes plus a manual trigger hook, so a framework would be a dependency
+// without a job.
 //
 // Routes
-//   GET  /health         liveness + whether AI generation is configured
-//   GET  /next-music     LiquidSoap's `request.dynamic` pull side (see below)
-//   POST /trigger/filler force one filler one-liner end-to-end (Phase 2 proof)
-//   GET  /trigger/filler same, so it can be fired from a browser/curl with no -X
+//   GET  /health            liveness, scheduler settings, who is on air now
+//   GET  /next-music        LiquidSoap's `request.dynamic` pull side (see below)
+//   GET  /schedule/now      what the scheduler resolves for a given instant
+//                           (?at=ISO) — the quickest way to debug a schedule edit
+//   GET|POST /trigger/<type>  fire one moment on demand (any of the seven)
 //
-// `/trigger/filler` accepts `?deliver=false` to stop after the clip is 'ready'
-// (generation only, no LiquidSoap push) — useful when testing without
-// liquidsoap running.
-//
-// Phase 3 replaces the optional FILLER_INTERVAL_SECONDS timer below with the
-// real ~5s scheduler loop and the full trigger-rule matrix.
+// `/trigger/<type>` accepts:
+//   ?deliver=false    stop once the clip is 'ready' (no LiquidSoap push) —
+//                     what to use when iterating on prompt wording
+//   ?presenter=Juno   speak as a specific presenter (id or name)
+//   ?collection=...   pretend a specific collection is playing
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { config } from "./config.ts";
-import { runFillerOnce } from "./filler.ts";
+import { ManualTriggerError, buildManualPlan } from "./manual.ts";
+import { runMoment } from "./moment.ts";
+import { seedMockNewsAndWeather } from "./providers/seedMockData.ts";
+import { Scheduler } from "./scheduler/loop.ts";
+import { resolveActiveSlot } from "./scheduler/resolveActiveSlot.ts";
+import { isTriggerType } from "./scheduler/types.ts";
 import {
   closeDb,
-  markTrackPlayed,
-  pickNextTrack,
+  countRows,
+  loadScheduleSnapshot,
   seedCollectionFromDisk,
 } from "./store.ts";
 
@@ -32,21 +38,19 @@ import {
  *
  * `uri` is the only field LiquidSoap reads (it feeds `request.create`), and it
  * is always an absolute path so LiquidSoap's working directory is irrelevant.
- * The other fields are informational — they make `curl /next-music` readable
- * and give Phase 3's `station_state` writer something to key on. The field is
- * named `uri` rather than `path` because `path` shadows LiquidSoap's stdlib
- * `path` module at the destructuring site.
+ * The other fields are informational. The field is named `uri` rather than
+ * `path` because `path` shadows LiquidSoap's stdlib `path` module at the
+ * destructuring site.
  */
 interface NextMusicResponse {
   uri: string;
   track_id: number;
   title: string | null;
+  collection: string;
+  presenter: string;
 }
 
-/** The track handed out most recently, so the next pick can't repeat it. */
-let lastTrackId: number | undefined;
-
-let collectionId: number;
+const scheduler = new Scheduler();
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -58,42 +62,104 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
+/**
+ * Hands LiquidSoap a track from whatever collection the schedule says is on
+ * air right now. Two distinct non-200 cases, both of which `next_music()`
+ * handles by returning `null` (request.dynamic retries, `mksafe` plays
+ * silence):
+ *   503 off air   — no schedule slot covers now; the station is meant to be quiet
+ *   503 no tracks — a slot is active but its collection is empty
+ */
 function handleNextMusic(res: ServerResponse): void {
-  const track = pickNextTrack(collectionId, lastTrackId);
+  const served = scheduler.takeNextTrack();
 
-  if (track === undefined) {
-    // 503 rather than 200-with-null: `next_music()` in radio.liq checks
-    // status_code and returns `null`, so request.dynamic retries on its
-    // retry_delay instead of treating a missing track as a hard failure.
+  if (served === null) {
+    const snapshot = loadScheduleSnapshot();
+    const active = resolveActiveSlot(snapshot, new Date());
     sendJson(res, 503, {
-      error: "no tracks available",
-      collection: config.testCollectionName,
-      hint: `Put .mp3 files in ${config.libraryDir}/${config.testCollectionName}/ and restart the engine.`,
+      error: active === null ? "off air" : "no tracks available",
+      detail:
+        active === null
+          ? "No enabled schedule slot covers the current time — the station is off air."
+          : `Collection "${active.collection.name}" has no tracks. Upload mp3s on the web UI's Collections page.`,
     });
     return;
   }
 
-  lastTrackId = track.id;
-  markTrackPlayed(track.id);
-
   const body: NextMusicResponse = {
-    uri: track.file_path,
-    track_id: track.id,
-    title: track.title,
+    uri: served.track.file_path,
+    track_id: served.track.id,
+    title: served.track.title,
+    collection: served.active.collection.name,
+    presenter: served.active.presenter.name,
   };
-  console.log(`[next-music] -> ${body.uri}`);
+  console.log(
+    `[next-music] -> ${body.uri} (${body.collection}, ${served.durationSeconds}s, ` +
+      `boundary at ${served.endsAt.toISOString()})`,
+  );
   sendJson(res, 200, body);
 }
 
-async function handleTriggerFiller(
+async function handleTrigger(
+  triggerType: string,
   url: URL,
   res: ServerResponse,
 ): Promise<void> {
-  const deliver = url.searchParams.get("deliver") !== "false";
-  const result = await runFillerOnce({ deliver });
-  // 'failed' is a real outcome, not a server bug — report it as 502 so a test
-  // script's exit code reflects it, but keep the body machine-readable.
-  sendJson(res, result.status === "failed" ? 502 : 200, result);
+  if (!isTriggerType(triggerType)) {
+    sendJson(res, 404, {
+      error: `unknown trigger type "${triggerType}"`,
+      valid: [
+        "song_intro",
+        "changeover",
+        "hour_open",
+        "news",
+        "weather",
+        "sign_off",
+        "filler",
+      ],
+    });
+    return;
+  }
+
+  try {
+    const plan = await buildManualPlan({
+      triggerType,
+      presenterRef: url.searchParams.get("presenter"),
+      collectionRef: url.searchParams.get("collection"),
+    });
+    const result = await runMoment(plan, {
+      deliver: url.searchParams.get("deliver") !== "false",
+    });
+    // 'failed' is a real outcome, not a server bug — report it as 502 so a test
+    // script's exit code reflects it, but keep the body machine-readable.
+    sendJson(res, result.status === "failed" ? 502 : 200, result);
+  } catch (err) {
+    if (err instanceof ManualTriggerError) {
+      sendJson(res, 400, { error: err.message });
+      return;
+    }
+    throw err;
+  }
+}
+
+function handleScheduleNow(url: URL, res: ServerResponse): void {
+  const atParam = url.searchParams.get("at");
+  const at = atParam ? new Date(atParam) : new Date();
+  if (Number.isNaN(at.getTime())) {
+    sendJson(res, 400, { error: `could not parse ?at=${atParam}` });
+    return;
+  }
+
+  const active = resolveActiveSlot(loadScheduleSnapshot(), at);
+  sendJson(res, 200, {
+    at: at.toISOString(),
+    on_air: active !== null,
+    presenter: active?.presenter.name ?? null,
+    collection: active?.collection.name ?? null,
+    slot_id: active?.slot.id ?? null,
+    slot_starts_at: active?.startsAt.toISOString() ?? null,
+    slot_ends_at: active?.endsAt.toISOString() ?? null,
+  });
 }
 
 const server = createServer(
@@ -101,9 +167,17 @@ const server = createServer(
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
     if (url.pathname === "/health") {
+      const active = resolveActiveSlot(loadScheduleSnapshot(), new Date());
       sendJson(res, 200, {
         ok: true,
-        collection: config.testCollectionName,
+        on_air: active !== null,
+        presenter: active?.presenter.name ?? null,
+        collection: active?.collection.name ?? null,
+        scheduler_enabled: config.schedulerEnabled,
+        tick_seconds: config.tickSeconds,
+        lookahead_seconds: config.lookaheadSeconds,
+        song_intro_probability: config.songIntroProbability,
+        filler_probability: config.fillerProbability,
         claude_model: config.claudeModel,
         elevenlabs_model: config.elevenLabsModel,
         // Reported so a caller can tell "AI disabled" from "AI broken"
@@ -119,12 +193,15 @@ const server = createServer(
       return;
     }
 
-    if (
-      url.pathname === "/trigger/filler" &&
-      (req.method === "POST" || req.method === "GET")
-    ) {
-      handleTriggerFiller(url, res).catch((err: unknown) => {
-        console.error("[server] /trigger/filler crashed —", err);
+    if (url.pathname === "/schedule/now" && req.method === "GET") {
+      handleScheduleNow(url, res);
+      return;
+    }
+
+    const trigger = /^\/trigger\/([a-z_]+)$/.exec(url.pathname);
+    if (trigger && (req.method === "POST" || req.method === "GET")) {
+      handleTrigger(trigger[1]!, url, res).catch((err: unknown) => {
+        console.error(`[server] ${url.pathname} crashed —`, err);
         sendJson(res, 500, {
           error: err instanceof Error ? err.message : String(err),
         });
@@ -136,21 +213,29 @@ const server = createServer(
   },
 );
 
-// Seed before listening, so the first /next-music can never race the seed.
-collectionId = seedCollectionFromDisk(config.testCollectionName);
+// --- boot -------------------------------------------------------------------
+// Bootstrap seeding only: mock news/weather rows if those tables are empty, and
+// the Phase 1 test collection only if the user has no collections at all (so a
+// fresh clone has something to play, and an established station is never
+// handed back a collection it deleted).
+seedMockNewsAndWeather();
+if (countRows("collections") === 0) {
+  seedCollectionFromDisk(config.testCollectionName);
+}
 
 server.listen(config.httpPort, "127.0.0.1", () => {
   console.log(
-    `[server] engine listening on http://127.0.0.1:${config.httpPort} ` +
-      `(collection "${config.testCollectionName}", id ${collectionId})`,
+    `[server] engine listening on http://127.0.0.1:${config.httpPort}`,
   );
   if (!process.env.ANTHROPIC_API_KEY || !process.env.ELEVENLABS_API_KEY) {
     console.warn(
       "[server] ANTHROPIC_API_KEY and/or ELEVENLABS_API_KEY not set — " +
-        "music playback works, but /trigger/filler will report 'failed'. " +
+        "music playback works, but every generated clip will report 'failed'. " +
         "Copy .env.example to .env at the repo root to enable AI generation.",
     );
   }
+  if (config.schedulerEnabled) scheduler.start();
+  else console.warn("[server] SCHEDULER_ENABLED=0 — music only, no AI moments");
 });
 
 let fillerTimer: NodeJS.Timeout | undefined;
@@ -160,13 +245,20 @@ if (config.fillerIntervalSeconds > 0) {
       `(FILLER_INTERVAL_SECONDS)`,
   );
   fillerTimer = setInterval(() => {
-    void runFillerOnce();
+    void (async () => {
+      try {
+        await runMoment(await buildManualPlan({ triggerType: "filler" }));
+      } catch (err) {
+        console.error("[server] interval filler failed —", err);
+      }
+    })();
   }, config.fillerIntervalSeconds * 1_000);
 }
 
 function shutdown(signal: string): void {
   console.log(`[server] ${signal} — shutting down`);
   if (fillerTimer) clearInterval(fillerTimer);
+  scheduler.stop();
   server.close(() => {
     closeDb();
     process.exit(0);

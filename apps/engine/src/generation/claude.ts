@@ -1,9 +1,9 @@
 // Script generation via the Claude API (official @anthropic-ai/sdk).
 //
-// Phase 2 implements exactly one of the user's seven trigger templates: the
-// filler one-liner (#7), the smallest input template — it needs no track
-// metadata, only the current time and the collection name. The other six
-// arrive in Phase 3.
+// One function, generic over all seven moment types: the system prompt is
+// whichever presenter the scheduler resolved from the `presenters` table (used
+// verbatim, so a system-prompt edit in the web UI takes effect on the very next
+// generation), and the user turn is that moment's template from prompts.ts.
 //
 // Model choice: the plan's locked-in decision #5 is "Claude API (Sonnet
 // family) for scripts", so `config.claudeModel` defaults to `claude-sonnet-5`
@@ -11,7 +11,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { config, requireEnv } from "../config.ts";
-import { WREN } from "../personas/wren.ts";
+import type { PresenterRow } from "../scheduler/types.ts";
+import { buildPrompt, maxTokensFor, type MomentContext } from "./prompts.ts";
 
 let client: Anthropic | undefined;
 
@@ -22,14 +23,6 @@ function getClient(): Anthropic {
     client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_API_KEY") });
   }
   return client;
-}
-
-export interface FillerContext {
-  /** Human-readable local time, e.g. "11:48pm" — the station's voice talks in
-   *  12-hour time, so format for the prompt, not for machines. */
-  currentTime: string;
-  /** Collection name, as the listener would hear it. */
-  playlistName: string;
 }
 
 /** Formats a Date the way the station's voice would say it. */
@@ -45,36 +38,25 @@ export function formatStationTime(now: Date = new Date()): string {
 }
 
 /**
- * The user's trigger-prompt template #7, verbatim. Kept as a function of the
- * context rather than inlined so Phase 3 can hold all seven templates in one
- * shape.
- */
-export function buildFillerPrompt(ctx: FillerContext): string {
-  return `Time: ${ctx.currentTime}
-Collection playing: ${ctx.playlistName}
-
-Write ONE short line (under 15 words) — a passing thought, not tied to any specific song. Something a tired, kind late-night host might murmur.`;
-}
-
-/**
- * Generates one filler one-liner in Wren's voice.
+ * Generates one spoken script in the active presenter's voice.
  *
  * Throws MissingConfigError (no API key) or an Anthropic.APIError subclass.
  * Callers are expected to catch and mark the clip 'failed' — a failed
  * generation must never take the station off the air.
  */
-export async function generateFillerScript(
-  ctx: FillerContext,
-): Promise<string> {
-  // A 15-word murmur needs no reasoning, and clips are generated close to
-  // their delivery deadline, so latency matters more than depth here:
-  // thinking off, and a max_tokens sized for a deliberately short output.
+export async function generateScript(args: {
+  presenter: PresenterRow;
+  context: MomentContext;
+}): Promise<string> {
+  // These are short spoken lines, generated close to their delivery deadline,
+  // so latency matters more than depth: thinking off, max_tokens sized to the
+  // template's own ask.
   const response = await getClient().messages.create({
     model: config.claudeModel,
-    max_tokens: 256,
+    max_tokens: maxTokensFor(args.context.triggerType),
     thinking: { type: "disabled" },
-    system: WREN.systemPrompt,
-    messages: [{ role: "user", content: buildFillerPrompt(ctx) }],
+    system: args.presenter.system_prompt,
+    messages: [{ role: "user", content: buildPrompt(args.context) }],
   });
 
   if (response.stop_reason === "refusal") {
@@ -97,7 +79,7 @@ export async function generateFillerScript(
     );
   }
 
-  // The system prompt already forbids stage directions and asterisks, but the
+  // The system prompts already forbid stage directions and asterisks, but the
   // text goes straight into a voice engine, so strip stray markdown emphasis
   // and surrounding quotes rather than trusting it to always comply.
   return text.replace(/[*_]/g, "").replace(/^["'“”]|["'“”]$/g, "").trim();
