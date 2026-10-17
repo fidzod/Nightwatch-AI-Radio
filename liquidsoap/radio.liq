@@ -102,7 +102,14 @@ program =
   fallback(
     id="program",
     track_sensitive=false,
-    [crossfade(id="inject_xfade", inject), crossfade(id="music_xfade", music)]
+    [
+      # Speech clips are back-to-back, independently-rendered files, not a
+      # continuous musical bed — a music-style blend overlaps the end of one
+      # clip with the start of the next, cutting both short. Near-zero
+      # duration/fade_in/fade_out gives a clean cut instead.
+      crossfade(id="inject_xfade", duration=0.2, fade_in=0.05, fade_out=0.05, inject),
+      crossfade(id="music_xfade", music)
+    ]
   )
 
 # Both leaves are fallible (the engine may be down, the inject queue is empty
