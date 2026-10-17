@@ -12,13 +12,16 @@
 // `/trigger/<type>` accepts:
 //   ?deliver=false    stop once the clip is 'ready' (no LiquidSoap push) —
 //                     what to use when iterating on prompt wording
-//   ?presenter=Juno   speak as a specific presenter (id or name)
+//   ?presenter=Thaddeus  speak as a specific presenter (id or name)
 //   ?collection=...   pretend a specific collection is playing
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { config } from "./config.ts";
 import { ManualTriggerError, buildManualPlan } from "./manual.ts";
 import { runMoment } from "./moment.ts";
+import { countryInfoFor } from "./providers/countryData.ts";
+import { GoogleNewsRssProvider } from "./providers/googleNewsRssProvider.ts";
+import { OpenMeteoWeatherProvider } from "./providers/openMeteoWeatherProvider.ts";
 import { seedMockNewsAndWeather } from "./providers/seedMockData.ts";
 import { Scheduler } from "./scheduler/loop.ts";
 import { resolveActiveSlot } from "./scheduler/resolveActiveSlot.ts";
@@ -26,6 +29,7 @@ import { isTriggerType } from "./scheduler/types.ts";
 import {
   closeDb,
   countRows,
+  getCountry,
   loadScheduleSnapshot,
   seedCollectionFromDisk,
 } from "./store.ts";
@@ -50,7 +54,25 @@ interface NextMusicResponse {
   presenter: string;
 }
 
-const scheduler = new Scheduler();
+/**
+ * Real news/weather, wired in explicitly here rather than left to
+ * `Scheduler`'s own constructor default — that default stays `MockNewsProvider`
+ * / `MockWeatherProvider` on purpose (see loop.ts), because
+ * src/test/simulateDay.ts constructs a `Scheduler` without passing providers
+ * and must never make a live network call. This is the one place that stands
+ * up the real providers for the actual running station.
+ *
+ * Both read the country via `getCountry()` on every call rather than once at
+ * boot, so a `/settings` change takes effect on the provider's next fetch —
+ * no engine restart required.
+ */
+const scheduler = new Scheduler({
+  news: new GoogleNewsRssProvider(
+    () => countryInfoFor(getCountry()).language,
+    () => getCountry(),
+  ),
+  weather: new OpenMeteoWeatherProvider(() => getCountry()),
+});
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);

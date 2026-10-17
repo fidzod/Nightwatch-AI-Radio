@@ -406,12 +406,12 @@ async function main(): Promise<void> {
     `${JSON.parse(of("news")[0]?.context_json ?? "{}").items?.length ?? 0} items`,
   );
   check(
-    "weather clips carry a real reading from the provider",
+    "weather clips carry at least one real reading from the provider",
     of("weather").every((c) => {
-      const reading = JSON.parse(c.context_json).reading as {
-        conditions?: string;
-      } | null;
-      return Boolean(reading?.conditions);
+      const readings = JSON.parse(c.context_json).readings as
+        | { conditions?: string }[]
+        | null;
+      return Boolean(readings && readings.length > 0 && readings[0]?.conditions);
     }),
   );
 

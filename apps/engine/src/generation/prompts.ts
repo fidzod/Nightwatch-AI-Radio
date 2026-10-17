@@ -55,7 +55,12 @@ export interface NewsContext extends BaseContext {
 
 export interface WeatherContext extends BaseContext {
   triggerType: "weather";
-  reading: WeatherReading;
+  /**
+   * One or more regional readings (see providers/weatherProvider.ts) — a real
+   * provider has no single "whole country" number to hand over, so it passes
+   * several spread-out cities and lets the write-up synthesize the picture.
+   */
+  readings: WeatherReading[];
 }
 
 export interface SignOffContext extends BaseContext {
@@ -128,11 +133,14 @@ ${formatNewsForPrompt(ctx.items)}
 
 Write a spoken news read, roughly 20-40 seconds long. Deliver items in order of what a listener would most want to know first. No sensationalism. If an item is grim, don't soften the facts, just don't editorialize.`;
 
-    case "weather":
+    case "weather": {
+      const multi = ctx.readings.length > 1;
       return `Time: ${ctx.currentTime}
-Raw weather data: ${formatWeatherForPrompt(ctx.reading)}
+Raw weather data${multi ? " (several regions — summarize the overall picture, don't just list cities)" : ""}:
+${formatWeatherForPrompt(ctx.readings)}
 
 Write a 2-3 sentence weather read, practical but in character.`;
+    }
 
     case "sign_off":
       return `Time: ${ctx.currentTime}

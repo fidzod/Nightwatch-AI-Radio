@@ -13,9 +13,10 @@ import { config } from "./config.ts";
 import { formatStationTime } from "./generation/claude.ts";
 import type { MomentContext } from "./generation/prompts.ts";
 import type { MomentPlan } from "./moment.ts";
-import { MockNewsProvider } from "./providers/newsProvider.ts";
-import { MockWeatherProvider } from "./providers/weatherProvider.ts";
-import { loadScheduleSnapshot, pickNextTrack } from "./store.ts";
+import { countryInfoFor } from "./providers/countryData.ts";
+import { GoogleNewsRssProvider } from "./providers/googleNewsRssProvider.ts";
+import { OpenMeteoWeatherProvider } from "./providers/openMeteoWeatherProvider.ts";
+import { getCountry, loadScheduleSnapshot, pickNextTrack } from "./store.ts";
 import { resolveActiveSlot } from "./scheduler/resolveActiveSlot.ts";
 import type {
   CollectionRow,
@@ -23,8 +24,16 @@ import type {
   TriggerType,
 } from "./scheduler/types.ts";
 
-const news = new MockNewsProvider();
-const weather = new MockWeatherProvider();
+// Real providers, matching the scheduler's production wiring (server.ts) —
+// a hand-fired `/trigger/news` or `/trigger/weather` should sound like the
+// real thing, not read from the mock seed rows. Both read the country fresh
+// on every call via `getCountry()`, so a `/settings` change applies without
+// restarting the engine.
+const news = new GoogleNewsRssProvider(
+  () => countryInfoFor(getCountry()).language,
+  () => getCountry(),
+);
+const weather = new OpenMeteoWeatherProvider(() => getCountry());
 
 export class ManualTriggerError extends Error {}
 
@@ -172,19 +181,19 @@ async function buildManualContext(args: {
       const items = await news.fetchLatestNews(config.newsItemCount);
       if (items.length === 0) {
         throw new ManualTriggerError(
-          "No news rows to read — the news_items table is empty.",
+          "No news items available. The Google News RSS fetch failed or returned nothing.",
         );
       }
       return { triggerType: "news", currentTime, dedupeKey, items };
     }
     case "weather": {
-      const reading = await weather.fetchCurrent();
-      if (reading === null) {
+      const readings = await weather.fetchCurrent();
+      if (readings === null) {
         throw new ManualTriggerError(
-          "No weather rows to read — the weather_snapshots table is empty.",
+          "No weather reading available. The forecast fetch failed or returned nothing.",
         );
       }
-      return { triggerType: "weather", currentTime, dedupeKey, reading };
+      return { triggerType: "weather", currentTime, dedupeKey, readings };
     }
   }
 }

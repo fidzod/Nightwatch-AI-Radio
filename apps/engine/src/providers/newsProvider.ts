@@ -7,9 +7,13 @@
 // shape mirrors what a real headlines API hands back — id, headline, summary,
 // category, source, publishedAt — rather than our column names.
 //
-// A real provider later is: implement `NewsProvider` against the HTTP API,
-// construct it instead of `MockNewsProvider` in src/scheduler/loop.ts. Nothing
-// else changes.
+// That "real provider later" is now `googleNewsRssProvider.ts`
+// (`GoogleNewsRssProvider`), wired in as the production default in
+// src/server.ts (passed explicitly into `new Scheduler({ news, weather })`
+// rather than changed here — see the comment on `SchedulerDeps.news`'s
+// default below for why). `MockNewsProvider` stays the Scheduler's own
+// built-in default so src/test/simulateDay.ts, which constructs a Scheduler
+// without passing providers, never makes a live network call.
 
 import { listNewsItems } from "../store.ts";
 

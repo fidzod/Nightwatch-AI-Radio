@@ -10,10 +10,11 @@
   },
   "dependencies": {
     "@airadio/db": "workspace:*",
-    "@anthropic-ai/sdk": "^0.133.0"
+    "@anthropic-ai/sdk": "^0.133.0",
+    "fast-xml-parser": "^5.11.2"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
   }
 }

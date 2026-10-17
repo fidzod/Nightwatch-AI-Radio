@@ -93,6 +93,18 @@ CREATE TABLE IF NOT EXISTS station_state (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Singleton settings row (same id=1 pattern as station_state above). Holds
+-- station-wide configuration that isn't really "state" (nothing writes it on
+-- a tick) but also isn't a constant. It's user-editable from the web UI.
+-- Currently just the country, which the engine's real news/weather providers
+-- read to pick a language/locale and coordinates; defaults to "GB" so a fresh
+-- clone has a sane default before anyone visits /settings.
+CREATE TABLE IF NOT EXISTS station_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  country TEXT NOT NULL DEFAULT 'GB',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS news_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   headline TEXT NOT NULL,
