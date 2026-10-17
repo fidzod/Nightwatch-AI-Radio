@@ -1,10 +1,150 @@
 import { fail } from '@sveltejs/kit';
 import { all, boolInt, nullable, run } from '#lib/server/db.ts';
+import { getSlotsForNow } from '#lib/server/live.ts';
 import type { Collection, Presenter, ScheduleSlotView } from '#lib/types.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// --- conflict detection -----------------------------------------------------
+// Mirrors apps/engine/src/scheduler/resolveActiveSlot.ts's `beats()` ordering
+// (date_override > priority > lowest id) so "who wins" on this page matches
+// what the engine actually does, not a simplified guess.
+
+export type SlotRival = {
+	id: number;
+	presenter_name: string;
+	recurrence_type: 'weekly' | 'date_override';
+	start_time: string;
+	end_time: string;
+	priority: number;
+	/** true: this rival beats the slot it's attached to. */
+	wins: boolean;
+};
+
+export type SlotConflict = {
+	/** true: at least one rival beats this slot — it never actually airs in the overlap. */
+	shadowed: boolean;
+	rivals: SlotRival[];
+};
+
+function toMinutes(hhmm: string): number {
+	const [h, m] = hhmm.split(':').map(Number);
+	return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/** A slot's window as one or two [start, end) minute ranges, splitting a
+ *  past-midnight wrap (21:00 -> 01:00) the same way the engine treats it. */
+function windowSegments(start: string, end: string): Array<[number, number]> {
+	const s = toMinutes(start);
+	const e = toMinutes(end);
+	return e > s
+		? [[s, e]]
+		: [
+				[s, 1440],
+				[0, e]
+			];
+}
+
+function segmentsOverlap(a: Array<[number, number]>, b: Array<[number, number]>): boolean {
+	for (const [aStart, aEnd] of a) {
+		for (const [bStart, bEnd] of b) {
+			if (aStart < bEnd && bStart < aEnd) return true;
+		}
+	}
+	return false;
+}
+
+function weekdayOfDate(dateStr: string): number {
+	const [y, m, d] = dateStr.split('-').map(Number);
+	return new Date(y, (m ?? 1) - 1, d ?? 1).getDay();
+}
+
+/** Two slots can only fight over the same instants if they land on the same
+ *  calendar weekday (two weeklys) or the same literal date (an override
+ *  against a weekly, or two overrides). */
+function sameDayContext(a: ScheduleSlotView, b: ScheduleSlotView): boolean {
+	const aOverride = a.recurrence_type === 'date_override';
+	const bOverride = b.recurrence_type === 'date_override';
+	if (!aOverride && !bOverride) return a.day_of_week === b.day_of_week;
+	if (aOverride && bOverride) return a.specific_date === b.specific_date;
+	const override = aOverride ? a : b;
+	const weekly = aOverride ? b : a;
+	return override.specific_date != null && weekdayOfDate(override.specific_date) === weekly.day_of_week;
+}
+
+/** date_override beats weekly, then higher priority, then lowest id — same
+ *  total order as the engine's `beats()`. */
+function slotBeats(a: ScheduleSlotView, b: ScheduleSlotView): boolean {
+	const aOverride = a.recurrence_type === 'date_override' ? 1 : 0;
+	const bOverride = b.recurrence_type === 'date_override' ? 1 : 0;
+	if (aOverride !== bOverride) return aOverride > bOverride;
+	if (a.priority !== b.priority) return a.priority > b.priority;
+	return a.id < b.id;
+}
+
+/**
+ * Pairwise overlap among slots that could actually contend for airtime (i.e.
+ * the engine would ever consider them): enabled, with an active presenter.
+ * A disabled slot or one whose presenter was deactivated is invisible to
+ * resolveActiveSlot, so it can't be "fighting" for a window either.
+ */
+function computeConflicts(
+	slots: ScheduleSlotView[],
+	presenterActive: Map<number, boolean>
+): Map<number, SlotConflict> {
+	const live = slots.filter((s) => !!s.enabled && presenterActive.get(s.presenter_id) !== false);
+	const byId = new Map<number, SlotConflict>();
+
+	const ensure = (id: number): SlotConflict => {
+		let entry = byId.get(id);
+		if (!entry) {
+			entry = { shadowed: false, rivals: [] };
+			byId.set(id, entry);
+		}
+		return entry;
+	};
+
+	for (let i = 0; i < live.length; i++) {
+		for (let j = i + 1; j < live.length; j++) {
+			const a = live[i];
+			const b = live[j];
+			if (!sameDayContext(a, b)) continue;
+			if (!segmentsOverlap(windowSegments(a.start_time, a.end_time), windowSegments(b.start_time, b.end_time))) {
+				continue;
+			}
+
+			const aWins = slotBeats(a, b);
+
+			const aEntry = ensure(a.id);
+			aEntry.rivals.push({
+				id: b.id,
+				presenter_name: b.presenter_name,
+				recurrence_type: b.recurrence_type,
+				start_time: b.start_time,
+				end_time: b.end_time,
+				priority: b.priority,
+				wins: !aWins
+			});
+			if (!aWins) aEntry.shadowed = true;
+
+			const bEntry = ensure(b.id);
+			bEntry.rivals.push({
+				id: a.id,
+				presenter_name: a.presenter_name,
+				recurrence_type: a.recurrence_type,
+				start_time: a.start_time,
+				end_time: a.end_time,
+				priority: a.priority,
+				wins: aWins
+			});
+			if (aWins) bEntry.shadowed = true;
+		}
+	}
+
+	return byId;
+}
 
 export const load: PageServerLoad = () => {
 	const slots = all<ScheduleSlotView>(
@@ -15,14 +155,27 @@ export const load: PageServerLoad = () => {
 		 ORDER BY s.recurrence_type, s.day_of_week, s.specific_date, s.start_time`
 	);
 
+	const presenters = all<Pick<Presenter, 'id' | 'name' | 'active'>>(
+		'SELECT id, name, active FROM presenters ORDER BY id'
+	);
+	const presenterActive = new Map(presenters.map((p) => [p.id, !!p.active]));
+	const conflicts = computeConflicts(slots, presenterActive);
+
+	// Same resolution the engine (and /live) would land on right now — so the
+	// user doesn't have to cross-reference the live view to see who's airing.
+	const nowSlot = getSlotsForNow()[0] ?? null;
+
 	return {
-		slots,
-		presenters: all<Pick<Presenter, 'id' | 'name' | 'active'>>(
-			'SELECT id, name, active FROM presenters ORDER BY id'
-		),
+		slots: slots.map((s) => ({
+			...s,
+			conflict: conflicts.get(s.id) ?? null,
+			presenterInactive: presenterActive.get(s.presenter_id) === false
+		})),
+		presenters,
 		collections: all<Pick<Collection, 'id' | 'name'>>(
 			'SELECT id, name FROM collections ORDER BY name COLLATE NOCASE'
-		)
+		),
+		nowSlot
 	};
 };
 

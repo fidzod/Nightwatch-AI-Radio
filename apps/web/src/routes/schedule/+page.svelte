@@ -47,6 +47,20 @@
 	}
 
 	const canSchedule = $derived(data.presenters.length > 0 && data.collections.length > 0);
+
+	const conflictCount = $derived(data.slots.filter((s) => s.conflict && s.conflict.rivals.length > 0).length);
+
+	// --- "where are we right now" tick on the coverage rail --------------------
+	const currentMinutes = () => {
+		const d = new Date();
+		return d.getHours() * 60 + d.getMinutes();
+	};
+	let nowMinutes = $state(currentMinutes());
+	$effect(() => {
+		const id = setInterval(() => (nowMinutes = currentMinutes()), 30_000);
+		return () => clearInterval(id);
+	});
+	const isTodayTab = $derived(!isOverrides && Number(tab) === new Date().getDay());
 </script>
 
 <div class="page-head">
@@ -59,11 +73,22 @@
 		<span class="strip__sep"></span>
 		<span>{data.slots.filter((s) => s.enabled).length} ENABLED</span>
 		<span class="strip__sep"></span>
+		<span class:hot={conflictCount > 0}>{conflictCount} OVERLAP{conflictCount === 1 ? '' : 'S'}</span>
+		<span class="strip__sep"></span>
 		<button class="btn btn--sm" disabled={!canSchedule} onclick={() => (adding = !adding)}>
 			{adding ? '− CLOSE' : '+ FILE NEW SLOT'}
 		</button>
 	</div>
 </div>
+
+<p class="flash" class:flash--error={!data.nowSlot} style="margin-bottom:16px">
+	{#if data.nowSlot}
+		● ON AIR NOW // {data.nowSlot.presenter_name} / {data.nowSlot.collection_name} ({data.nowSlot
+			.start_time}–{data.nowSlot.end_time})
+	{:else}
+		○ OFF AIR // nothing covers this moment. See <a href="/live">live view</a>
+	{/if}
+</p>
 
 {#if form?.error}
 	<p class="flash flash--error" style="margin-bottom:16px">ERR // {form.error}</p>
@@ -189,11 +214,16 @@
 							<span
 								class="coverage__bar"
 								class:coverage__bar--off={!slot.enabled}
+								class:coverage__bar--conflict={!!slot.conflict && slot.conflict.rivals.length > 0}
+								class:coverage__bar--onair={slot.id === data.nowSlot?.id}
 								style="left:{bar.left}%;width:{bar.width}%"
 								title="{slot.presenter_name} · {slot.start_time}–{slot.end_time}"
 							></span>
 						{/each}
 					{/each}
+					{#if isTodayTab}
+						<span class="coverage__now" style="left:{(nowMinutes / 1440) * 100}%" title="now"></span>
+					{/if}
 				</div>
 				<div class="coverage__ticks">
 					{#each [0, 3, 6, 9, 12, 15, 18, 21] as hour}
@@ -210,7 +240,12 @@
 		{:else}
 			<div class="slots">
 				{#each visible as slot (slot.id)}
-					<article class="slot" class:slot--off={!slot.enabled}>
+					<article
+						class="slot"
+						class:slot--off={!slot.enabled}
+						class:slot--conflict={!!slot.conflict && slot.conflict.rivals.length > 0}
+						class:slot--onair={slot.id === data.nowSlot?.id}
+					>
 						<div class="slot__window">
 							<span class="slot__time">{slot.start_time}</span>
 							<span class="slot__dash">—</span>
@@ -221,19 +256,42 @@
 							<div class="row row--between">
 								<span class="slot__presenter">{slot.presenter_name}</span>
 								<div class="row" style="gap:5px">
+									{#if slot.id === data.nowSlot?.id}
+										<span class="tag tag--cyan">● ON AIR NOW</span>
+									{/if}
 									{#if slot.recurrence_type === 'date_override'}
-										<span class="tag tag--magenta">{slot.specific_date}</span>
+										<span class="tag">{slot.specific_date}</span>
 									{/if}
 									<span class="tag">PRI {slot.priority}</span>
-									<span class="tag" class:tag--green={!!slot.enabled} class:tag--off={!slot.enabled}>
+									<span class="tag" class:tag--off={!slot.enabled}>
 										{slot.enabled ? 'ENABLED' : 'OFF'}
 									</span>
+									{#if slot.presenterInactive}
+										<span class="tag tag--magenta">⚠ PRESENTER INACTIVE</span>
+									{/if}
+									{#if slot.conflict && slot.conflict.rivals.length > 0}
+										<span class="tag tag--magenta">
+											{slot.conflict.shadowed ? '⚠ OVERLAP · LOSES' : '⚠ OVERLAP · WINS'}
+										</span>
+									{/if}
 								</div>
 							</div>
 							<div class="slot__coll">
 								<span class="label">COLLECTION</span>
 								<span>{slot.collection_name}</span>
 							</div>
+
+							{#if slot.conflict && slot.conflict.rivals.length > 0}
+								<p class="slot__conflict-note">
+									{#each slot.conflict.rivals as rival, i}{i === 0
+											? ''
+											: ' · '}overlaps {rival.start_time}–{rival.end_time} with <strong
+											>{rival.presenter_name}</strong
+										>
+										({rival.recurrence_type === 'date_override' ? 'override' : `PRI ${rival.priority}`}).
+										{rival.wins ? 'That one wins.' : 'This one wins.'}{/each}
+								</p>
+							{/if}
 
 							<details class="slot__edit">
 								<summary>EDIT SLOT {String(slot.id).padStart(3, '0')}</summary>
@@ -347,8 +405,11 @@
 	<Panel title="FILING NOTES" flat corners={false}>
 		<p class="mono-sm dim">
 			Weekly slots repeat every week on their day; a date override claims a specific calendar
-			date and outranks the weekly grid. Where two slots overlap, the higher priority wins —
-			the <a href="/live">live view</a> shows which one the engine would resolve right now.
+			date and outranks the weekly grid. Where two enabled slots overlap, a date override beats
+			a weekly slot, then the higher priority wins, then the lowest slot id — overlapping slots
+			are marked <span class="hot">⚠ OVERLAP</span> above with the call already made. The
+			<span class="ok">● ON AIR NOW</span> banner and tag track what the engine is actually
+			resolving right now, same as the <a href="/live">live view</a>.
 		</p>
 	</Panel>
 </div>
@@ -419,15 +480,16 @@
 	}
 
 	.tab__count {
+		/* a plain count, not a warning — ink, not magenta */
 		font-size: 8.5px;
-		color: var(--magenta-dim);
+		color: var(--ink-3);
 		border: 1px solid currentColor;
 		padding: 0 3px;
 		line-height: 1.3;
 	}
 
 	.tab--on .tab__count {
-		color: var(--magenta);
+		color: var(--ink);
 	}
 
 	/* --- the index card ------------------------------------------------------- */
@@ -502,19 +564,42 @@
 	}
 
 	.coverage__bar {
+		/* coverage is slot *data*, not a "live now" signal — ink, not cyan */
 		position: absolute;
 		top: 2px;
 		bottom: 2px;
-		background: rgba(73, 229, 224, 0.3);
-		border-left: 1px solid var(--cyan);
-		border-right: 1px solid var(--cyan);
-		box-shadow: 0 0 10px rgba(73, 229, 224, 0.25);
+		background: rgba(238, 249, 247, 0.14);
+		border-left: 1px solid var(--ink-2);
+		border-right: 1px solid var(--ink-2);
 	}
 
 	.coverage__bar--off {
-		background: rgba(127, 163, 166, 0.12);
+		background: rgba(127, 163, 166, 0.1);
 		border-color: var(--ink-3);
-		box-shadow: none;
+	}
+
+	.coverage__bar--conflict {
+		border-left-color: var(--magenta);
+		border-right-color: var(--magenta);
+		background: rgba(255, 56, 100, 0.16);
+	}
+
+	/* the one bar that's actually on air right now earns the cyan signal */
+	.coverage__bar--onair {
+		border-left-color: var(--cyan);
+		border-right-color: var(--cyan);
+		background: rgba(79, 245, 240, 0.3);
+		box-shadow: 0 0 10px rgba(79, 245, 240, 0.3);
+	}
+
+	.coverage__now {
+		position: absolute;
+		top: -2px;
+		bottom: -2px;
+		width: 1px;
+		background: var(--cyan);
+		box-shadow: var(--glow-cyan);
+		z-index: 1;
 	}
 
 	.coverage__ticks {
@@ -547,6 +632,27 @@
 
 	.slot--off {
 		opacity: 0.55;
+	}
+
+	/* a genuine schedule conflict is the one case besides "live now" that
+	   earns a signal colour of its own here — magenta, because it's a real
+	   problem the user should notice, not decoration. */
+	.slot--conflict {
+		border-color: var(--magenta-dim);
+		box-shadow: inset 0 0 30px rgba(153, 35, 63, 0.08);
+	}
+
+	/* whichever slot the engine would actually resolve to right now */
+	.slot--onair {
+		border-color: var(--cyan-dim);
+		box-shadow:
+			inset 0 0 30px rgba(34, 163, 168, 0.08),
+			0 0 14px rgba(34, 163, 168, 0.12);
+	}
+
+	.slot--onair .slot__window {
+		background: var(--cyan);
+		color: var(--void);
 	}
 
 	.slot__window {
@@ -586,11 +692,15 @@
 	}
 
 	.slot__presenter {
+		/* ink-dominant by default; cyan is reserved for the on-air-now signal */
 		font-family: var(--crt);
 		font-size: 23px;
 		letter-spacing: 0.06em;
+		color: var(--ink);
+	}
+
+	.slot--onair .slot__presenter {
 		color: var(--cyan);
-		text-shadow: var(--glow-cyan);
 	}
 
 	.slot__coll {
@@ -604,6 +714,17 @@
 
 	.slot__coll .label {
 		display: inline;
+	}
+
+	.slot__conflict-note {
+		font-size: 10.5px;
+		line-height: 1.6;
+		color: #ffd6de;
+		margin: 2px 0 8px;
+	}
+
+	.slot__conflict-note strong {
+		color: var(--magenta);
 	}
 
 	.slot__edit summary {
