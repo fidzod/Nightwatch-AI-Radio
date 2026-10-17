@@ -20,6 +20,9 @@ audio/generated/*
 !audio/library/.gitkeep
 !audio/generated/.gitkeep
 
+# local DB backups from one-off migrations
+backups/
+
 # logs
 *.log
 npm-debug.log*
