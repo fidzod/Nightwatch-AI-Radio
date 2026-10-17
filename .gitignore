@@ -33,3 +33,5 @@ npm-debug.log*
 # Claude Code local tooling state
 .claude/
 data/logs/
+
+ui-reference-images

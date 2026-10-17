@@ -35,9 +35,11 @@ pnpm --filter @airadio/web dev     # http://localhost:5173
 - Uploads are probed with `ffprobe` (duration + ID3 title/artist), sha256-
   deduped per collection, and stored with **absolute** `file_path`s — the same
   convention the engine hands to LiquidSoap.
-- `src/lib/server/seed.ts` seeds the three personas (Wren/Juno/Marlowe) and one
-  weekly slot per persona on first boot. Every step is idempotent per row, so it
-  is safe to race against the engine seeding the same tables. Importing loose
+- `src/lib/server/seed.ts` seeds the four personas (Cassius/Thaddeus/Lucan/
+  Leander) and one weekly slot per persona, but only on a genuinely empty
+  table — once any presenter exists, seeding never runs again, so renaming or
+  deleting one sticks. It's also safe to race against the engine seeding the
+  same tables. Importing loose
   files from `audio/library/` happens only when `collections` is completely
   empty, so deleting a collection in the UI doesn't resurrect it on restart.
 
