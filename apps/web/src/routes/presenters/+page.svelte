@@ -89,7 +89,7 @@
 						<p class="dossier__role">{nullDash(presenter.station_role, 'unassigned')}</p>
 					</div>
 					<div class="dossier__lamps">
-						<span class="tag" class:tag--green={!!presenter.active} class:tag--off={!presenter.active}>
+						<span class="tag" class:tag--cyan={!!presenter.active} class:tag--magenta={!presenter.active}>
 							{presenter.active ? 'ACTIVE' : 'STOOD DOWN'}
 						</span>
 						<span class="tag" class:tag--cyan={!!presenter.elevenlabs_voice_id} class:tag--off={!presenter.elevenlabs_voice_id}>
@@ -276,8 +276,7 @@
 		font-size: 34px;
 		line-height: 1;
 		letter-spacing: 0.05em;
-		color: var(--green);
-		text-shadow: var(--glow-green);
+		color: var(--ink);
 		margin: 3px 0 4px;
 		font-weight: 400;
 	}
@@ -305,7 +304,7 @@
 	.dossier__specs dt {
 		font-size: 9px;
 		letter-spacing: 0.28em;
-		color: var(--green-dim);
+		color: var(--ink-3);
 		margin-bottom: 3px;
 	}
 
@@ -320,8 +319,8 @@
 		font-family: var(--mono);
 		font-size: 10.5px;
 		line-height: 1.6;
-		color: #9ad9b2;
-		background: #030806;
+		color: var(--ink-2);
+		background: rgba(0, 0, 0, 0.6);
 		border: 1px solid var(--green-deep);
 		padding: 12px 13px;
 		margin: 0 0 13px;
@@ -332,7 +331,7 @@
 	}
 
 	.dossier__edit summary {
-		color: var(--green-dim);
+		color: var(--ink-3);
 	}
 
 	.dossier__edit summary::before {

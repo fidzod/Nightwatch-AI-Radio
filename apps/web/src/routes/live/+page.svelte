@@ -127,7 +127,7 @@
 		<h1 class="page-title">On Air Now</h1>
 	</div>
 	<div class="strip">
-		<span class:ok={snap.onAir} class:hot={!snap.onAir}>
+		<span class="status-flag" class:ok={snap.onAir} class:hot={!snap.onAir}>
 			{snap.onAir ? '● ON AIR' : '○ OFF AIR'}
 		</span>
 		<span class="strip__sep"></span>
@@ -157,7 +157,7 @@
 		>
 			<div class="now">
 				<div class="now__wire">
-					<Wireframe variant="orbit" size={168} opacity={0.32} spin />
+					<Wireframe variant="orbit" size={168} opacity={0.55} spin />
 				</div>
 				<div class="now__body">
 					<span class="label">{snap.onAir ? 'CURRENT ITEM' : 'LAST KNOWN ITEM'}</span>
@@ -208,7 +208,7 @@
 						<KV
 							k={i === 0 ? 'ACTIVE' : 'SHADOWED'}
 							v={`${slot.presenter_name} / ${slot.collection_name}`}
-							tone={i === 0 ? 'cyan' : 'dim'}
+							tone={i === 0 ? 'default' : 'dim'}
 						/>
 						<KV
 							k="WINDOW"
@@ -261,7 +261,7 @@
 				<input type="range" min="0" max="1" step="0.01" bind:value={volume} />
 			</label>
 
-			<KV k="MOUNT" v="/nightwatch.mp3" tone="cyan" />
+			<KV k="MOUNT" v="/nightwatch.mp3" />
 			<KV k="HOST" v="localhost:8000" />
 			{#if receiver === 'lost'}
 				<p class="mono-sm hot note">
@@ -284,15 +284,15 @@
 			<KV
 				k="ENGINE"
 				v={snap.onAir ? 'ONLINE' : 'ABSENT'}
-				tone={snap.onAir ? 'green' : 'magenta'}
+				tone={snap.onAir ? 'cyan' : 'magenta'}
 			/>
 			<KV
 				k="HEARTBEAT"
 				v={snap.heartbeatAgeSeconds === null ? null : `${snap.heartbeatAgeSeconds}s AGO`}
 			/>
-			<KV k="PRESENTER" v={snap.presenter?.name ?? null} tone="cyan" />
+			<KV k="PRESENTER" v={snap.presenter?.name ?? null} />
 			<KV k="ROLE" v={snap.presenter?.station_role ?? null} tone="dim" />
-			<KV k="COLLECTION" v={snap.collection?.name ?? null} tone="cyan" />
+			<KV k="COLLECTION" v={snap.collection?.name ?? null} />
 			<KV k="MOOD" v={snap.collection?.mood_tag ?? null} tone="dim" />
 			<KV k="SLOT ID" v={stationState?.current_schedule_slot_id ?? null} />
 			<KV k="STATE ROW" v={stationState ? 'PRESENT' : 'MISSING'} tone={stationState ? 'dim' : 'magenta'} />
@@ -317,7 +317,7 @@
 				<span class="legend__k ok">●</span><span>carrier / engine online</span>
 				<span class="legend__k hot">○</span><span>off air, no heartbeat</span>
 				<span class="legend__k">▮</span><span>item progress</span>
-				<span class="legend__k warn">⚠</span><span>alert condition</span>
+				<span class="legend__k hot">⚠</span><span>alert condition</span>
 			</div>
 			<div class="tick-rail" style="margin-top:12px"></div>
 			<div class="counts">
@@ -372,10 +372,14 @@
 		flex: 1;
 	}
 
+	.status-flag {
+		font-weight: 700;
+	}
+
 	.hud {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 320px;
-		gap: 16px;
+		gap: 20px;
 		align-items: start;
 	}
 
@@ -393,8 +397,10 @@
 	}
 
 	.now__wire {
+		/* kept deliberately recessive — the readout is the hero, the orbit is
+		   a backdrop motif, not a second thing competing for the eye */
 		flex: 0 0 auto;
-		opacity: 0.9;
+		opacity: 0.5;
 	}
 
 	.now__body {
@@ -426,7 +432,7 @@
 		position: absolute;
 		inset: 0 auto 0 0;
 		background: linear-gradient(90deg, var(--cyan-deep), var(--cyan));
-		box-shadow: 0 0 12px rgba(73, 229, 224, 0.5);
+		box-shadow: 0 0 12px rgba(79, 245, 240, 0.5);
 		transition: width 900ms linear;
 	}
 
@@ -435,8 +441,8 @@
 		inset: 0;
 		background-image: repeating-linear-gradient(
 			90deg,
-			rgba(4, 6, 10, 0.9) 0,
-			rgba(4, 6, 10, 0.9) 1px,
+			rgba(0, 0, 0, 0.9) 0,
+			rgba(0, 0, 0, 0.9) 1px,
 			transparent 1px,
 			transparent 9px
 		);
@@ -454,11 +460,11 @@
 		gap: 9px;
 		font-size: 11.5px;
 		padding: 3px 0;
-		border-bottom: 1px dotted rgba(33, 76, 89, 0.5);
+		border-bottom: 1px dotted rgba(41, 92, 100, 0.5);
 	}
 
 	.log__idx {
-		color: var(--magenta-dim);
+		color: var(--ink-3);
 		font-size: 10px;
 	}
 
@@ -482,7 +488,7 @@
 	}
 
 	.log__time {
-		color: var(--cyan);
+		color: var(--ink);
 		font-size: 11px;
 	}
 
@@ -499,21 +505,23 @@
 		font-size: 11px;
 		letter-spacing: 0.2em;
 		color: var(--cyan);
-		background: rgba(13, 74, 82, 0.25);
+		background: rgba(12, 69, 76, 0.25);
 		border: 1px solid var(--cyan-dim);
 		padding: 10px 16px;
 		cursor: pointer;
 	}
 
 	.rx__btn:hover {
-		background: rgba(73, 229, 224, 0.16);
-		box-shadow: 0 0 16px rgba(73, 229, 224, 0.2);
+		background: rgba(79, 245, 240, 0.16);
+		box-shadow: 0 0 16px rgba(79, 245, 240, 0.2);
 	}
 
+	/* locked carrier is a nominal/live state, not an alert — mirror the cyan
+	   lamp rather than reaching for magenta here. */
 	.rx__btn--on {
-		color: var(--magenta);
-		border-color: var(--magenta-dim);
-		background: rgba(153, 50, 95, 0.2);
+		color: var(--void);
+		background: var(--cyan);
+		border-color: var(--cyan);
 	}
 
 	.rx__status {
@@ -527,25 +535,29 @@
 		height: 9px;
 		border-radius: 50%;
 		border: 1px solid var(--line-bright);
-		background: #061016;
+		background: #000000;
 	}
 
+	/* nominal and acquiring are both "nothing's wrong" states, so they share
+	   the primary hue — only pulse speed tells them apart. Lost carrier is
+	   the one state that earns the alert hue. */
 	.rx__lamp--on {
-		background: var(--green);
-		border-color: var(--green);
-		box-shadow: var(--glow-green);
+		background: var(--cyan);
+		border-color: var(--cyan);
+		box-shadow: var(--glow-cyan);
 		animation: pulse 2.4s ease-in-out infinite;
 	}
 
 	.rx__lamp--warn {
-		background: var(--amber);
-		border-color: var(--amber);
+		background: var(--cyan-dim);
+		border-color: var(--cyan-dim);
 		animation: pulse 700ms linear infinite;
 	}
 
 	.rx__lamp--bad {
-		background: var(--red);
-		border-color: var(--red);
+		background: var(--magenta);
+		border-color: var(--magenta);
+		box-shadow: var(--glow-magenta);
 	}
 
 	@keyframes pulse {
@@ -598,7 +610,7 @@
 		gap: 9px;
 		font-size: 11px;
 		letter-spacing: 0.1em;
-		color: #ffd3e8;
+		color: #ffd6de;
 		padding: 2px 0;
 	}
 

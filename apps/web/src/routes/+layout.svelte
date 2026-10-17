@@ -10,7 +10,8 @@
 		{ href: '/live', label: 'LIVE', key: 'A' },
 		{ href: '/collections', label: 'COLLECTIONS', key: 'B' },
 		{ href: '/presenters', label: 'PRESENTERS', key: 'C' },
-		{ href: '/schedule', label: 'SCHEDULE', key: 'D' }
+		{ href: '/schedule', label: 'SCHEDULE', key: 'D' },
+		{ href: '/settings', label: 'SETTINGS', key: 'E' }
 	];
 
 	let clock = $state('--:--:--');
@@ -109,8 +110,7 @@
 	}
 
 	.ident {
-		color: var(--cyan);
-		text-shadow: var(--glow-cyan);
+		color: var(--ink);
 	}
 
 	.sep {
@@ -129,8 +129,7 @@
 		font-family: var(--crt);
 		font-size: 15px;
 		letter-spacing: 0.1em;
-		color: var(--amber);
-		text-shadow: 0 0 9px rgba(255, 182, 92, 0.4);
+		color: var(--ink);
 		min-width: 74px;
 		text-align: right;
 	}
@@ -159,16 +158,15 @@
 	}
 
 	.nav__item:hover {
-		color: var(--cyan);
-		text-shadow: none;
-		background: rgba(29, 138, 141, 0.06);
+		color: var(--ink);
+		background: rgba(255, 255, 255, 0.04);
 	}
 
 	.nav__item--on {
-		color: var(--cyan);
+		color: var(--ink);
 		border-color: var(--line-2);
 		background: var(--void);
-		box-shadow: inset 0 1px 0 var(--cyan-dim);
+		box-shadow: inset 0 1px 0 var(--ink-3);
 	}
 
 	.nav__item--on::after {
@@ -183,14 +181,14 @@
 
 	.nav__key {
 		font-size: 8.5px;
-		color: var(--magenta-dim);
+		color: var(--ink-3);
 		border: 1px solid currentColor;
 		padding: 0 3px;
 		line-height: 1.3;
 	}
 
 	.nav__item--on .nav__key {
-		color: var(--magenta);
+		color: var(--ink);
 	}
 
 	.page {

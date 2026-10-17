@@ -203,7 +203,6 @@
 					<KV
 						k={dayName(slot.day_of_week)}
 						v={`${slot.start_time}–${slot.end_time} · ${slot.presenter_name}`}
-						tone="cyan"
 					/>
 				{/each}
 				{#if data.slots.length > 8}
@@ -246,7 +245,7 @@
 		display: flex;
 		border: 1px solid var(--line-2);
 		background:
-			radial-gradient(130% 80% at 80% 0%, rgba(29, 138, 141, 0.1), transparent 62%),
+			radial-gradient(130% 80% at 80% 0%, rgba(34, 163, 168, 0.1), transparent 62%),
 			linear-gradient(175deg, rgba(10, 17, 25, 0.96), rgba(4, 6, 10, 0.99));
 		position: relative;
 		min-width: 0;
@@ -269,7 +268,7 @@
 		gap: 14px;
 		padding: 18px 0;
 		writing-mode: vertical-rl;
-		background: linear-gradient(90deg, rgba(153, 50, 95, 0.14), transparent);
+		background: linear-gradient(90deg, rgba(153, 35, 63, 0.14), transparent);
 	}
 
 	.insert__spine-text {
@@ -277,8 +276,7 @@
 		font-size: 24px;
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
-		color: var(--cyan);
-		text-shadow: var(--glow-cyan);
+		color: var(--ink);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -288,7 +286,7 @@
 		font-size: 8.5px;
 		letter-spacing: 0.32em;
 		text-transform: uppercase;
-		color: var(--magenta-dim);
+		color: var(--ink-3);
 		white-space: nowrap;
 	}
 
@@ -327,8 +325,8 @@
 		font-size: 9.5px;
 		letter-spacing: 0.34em;
 		text-transform: uppercase;
-		color: var(--magenta);
-		border-bottom: 1px solid var(--magenta-dim);
+		color: var(--ink-2);
+		border-bottom: 1px solid var(--line-2);
 		padding-bottom: 4px;
 		margin-bottom: 7px;
 		font-weight: 400;
@@ -365,11 +363,11 @@
 	}
 
 	.trk__row:hover .trk__t {
-		color: var(--cyan);
+		text-decoration: underline;
 	}
 
 	.trk__n {
-		color: var(--magenta-dim);
+		color: var(--ink-3);
 		font-size: 9.5px;
 		letter-spacing: 0.1em;
 		min-width: 20px;
@@ -402,7 +400,7 @@
 	}
 
 	.trk__d {
-		color: var(--cyan-dim);
+		color: var(--ink-2);
 		font-size: 10.5px;
 		min-width: 40px;
 		text-align: right;

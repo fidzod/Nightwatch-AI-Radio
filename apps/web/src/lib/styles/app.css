@@ -3,10 +3,13 @@
    ---------------------------------------------------------------------------
    One piece of analog signal equipment, not a themed admin panel. Everything
    here is hand-rolled; no component kit. Reference language (ui-reference-
-   images/): SPCNET deep-map HUD (boxed telemetry on black, cyan hairlines,
-   magenta alerts, tick rails), a DOS-era green terminal (forms), a tabbed
-   folder flyer (schedule), a cassette J-card (collections), wireframe grids
-   and a phosphor globe (decoration).
+   images/): SPCNET deep-map HUD (boxed telemetry on plain black, cyan
+   hairlines, a single hot magenta/red reserved for alerts, tick rails), a
+   DOS-era ship schematic (forms — blue/magenta on black, not green), a
+   cassette J-card (collections), wireframe grids and a phosphor globe
+   (decoration). Across every reference the pattern is the same: black field,
+   one bright signal hue doing the talking, red/magenta held back for when
+   something is actually wrong — not six hues sharing the stage.
    =========================================================================== */
 
 @font-face {
@@ -26,42 +29,53 @@
 }
 
 :root {
-	/* --- field ------------------------------------------------------------ */
-	--void: #04060a;
-	--void-2: #070b11;
-	--panel: #080d13;
-	--panel-2: #0b1219;
-	--panel-lit: #0e1720;
+	/* --- field: plain black, not near-black. Two steps of lift off it for ---
+	   surfaces that need to read as "a panel", nothing more. */
+	--void: #000000;
+	--void-2: #070707;
+	--panel-lit: #0a1414;
 
-	/* --- line work -------------------------------------------------------- */
-	--line: #17323c;
-	--line-2: #214c59;
-	--line-bright: #2f7f8c;
+	/* --- line work (cyan-tinted hairlines; brighter than before so they read
+	   clearly against true black) ------------------------------------------- */
+	--line: #1a3a40;
+	--line-2: #295c64;
+	--line-bright: #3fa0ac;
 
-	/* --- signal colours --------------------------------------------------- */
-	--cyan: #49e5e0;
-	--cyan-dim: #1d8a8d;
-	--cyan-deep: #0d4a52;
-	--magenta: #ff4fa3;
-	--magenta-dim: #99325f;
-	--green: #5dff9b;
-	--green-dim: #2d8a56;
-	--green-deep: #0d2c1c;
-	--amber: #ffb65c;
-	--red: #ff4d55;
-	--bone: #d9ddd4;
+	/* --- signal colours ----------------------------------------------------
+	   Two accent hues, full stop — the references (SPCNET deep map, the DOS
+	   ship schematic, the wireframe sheets) run on white/cyan hairlines for
+	   "nominal" and a single hot red/magenta for "alert"; nothing else earns
+	   its own hue. --cyan is that nominal/primary signal; --magenta is alert
+	   (it also stands in for what used to be a separate --red — same job). */
+	--cyan: #4ff5f0;
+	--cyan-dim: #22a3a8;
+	--cyan-deep: #0c454c;
+	--magenta: #ff3864;
+	--magenta-dim: #99233f;
+
+	/* --- legacy names, aliased -----------------------------------------------
+	   --green/--green-dim/--green-deep and --amber are kept only because a
+	   few out-of-scope pages (presenters, collections, the header clock)
+	   still reference them directly; they now resolve to the same two hues
+	   above rather than carrying hues of their own. --bone is a warm neutral,
+	   not an accent — it sits with the ink family. */
+	--green: #4ff5f0;
+	--green-dim: #22a3a8;
+	--green-deep: #0c454c;
+	--amber: #22a3a8;
+	--bone: #e3ece9;
 
 	/* --- type ------------------------------------------------------------- */
-	--ink: #d7efec;
-	--ink-2: #93babc;
-	--ink-3: #5f8186;
+	--ink: #eef9f7;
+	--ink-2: #9bc7c9;
+	--ink-3: #678d90;
 
 	--mono: 'JetBrains Mono', ui-monospace, 'DejaVu Sans Mono', 'Courier New', monospace;
 	--crt: 'VT323', 'JetBrains Mono', ui-monospace, monospace;
 
-	--glow-cyan: 0 0 1px rgba(73, 229, 224, 0.9), 0 0 10px rgba(73, 229, 224, 0.35);
-	--glow-green: 0 0 1px rgba(93, 255, 155, 0.9), 0 0 10px rgba(93, 255, 155, 0.3);
-	--glow-magenta: 0 0 1px rgba(255, 79, 163, 0.9), 0 0 12px rgba(255, 79, 163, 0.35);
+	--glow-cyan: 0 0 1px rgba(79, 245, 240, 0.9), 0 0 10px rgba(79, 245, 240, 0.35);
+	--glow-green: 0 0 1px rgba(79, 245, 240, 0.9), 0 0 10px rgba(79, 245, 240, 0.35);
+	--glow-magenta: 0 0 1px rgba(255, 56, 100, 0.9), 0 0 12px rgba(255, 56, 100, 0.35);
 
 	--gutter: 22px;
 	color-scheme: dark;
@@ -92,8 +106,8 @@ body {
 	letter-spacing: 0.01em;
 	/* faint carrier wash so pure black never reads as "unstyled" */
 	background-image:
-		radial-gradient(900px 520px at 18% -10%, rgba(29, 138, 141, 0.16), transparent 70%),
-		radial-gradient(700px 420px at 92% 110%, rgba(153, 50, 95, 0.12), transparent 70%);
+		radial-gradient(900px 520px at 18% -10%, rgba(34, 163, 168, 0.18), transparent 70%),
+		radial-gradient(700px 420px at 92% 110%, rgba(153, 35, 63, 0.13), transparent 70%);
 	background-attachment: fixed;
 }
 
@@ -122,7 +136,7 @@ a {
 }
 
 a:hover {
-	text-shadow: var(--glow-cyan);
+	text-decoration: underline;
 }
 
 img,
@@ -138,7 +152,7 @@ hr {
 
 ::selection {
 	background: var(--cyan-deep);
-	color: #eafffe;
+	color: #effffd;
 }
 
 /* --- typography ----------------------------------------------------------- */
@@ -152,11 +166,11 @@ hr {
 }
 
 .label--cyan {
-	color: var(--cyan-dim);
+	color: var(--ink-2);
 }
 
 .label--green {
-	color: var(--green-dim);
+	color: var(--ink-2);
 }
 
 .readout {
@@ -164,8 +178,7 @@ hr {
 	font-size: 30px;
 	line-height: 1;
 	letter-spacing: 0.04em;
-	color: var(--cyan);
-	text-shadow: var(--glow-cyan);
+	color: var(--ink);
 }
 
 .readout--sm {
@@ -178,12 +191,10 @@ hr {
 
 .readout--magenta {
 	color: var(--magenta);
-	text-shadow: var(--glow-magenta);
 }
 
 .readout--bone {
 	color: var(--bone);
-	text-shadow: 0 0 10px rgba(217, 221, 212, 0.25);
 }
 
 .mono-sm {
@@ -285,7 +296,6 @@ hr {
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	color: var(--ink);
-	text-shadow: 0 0 12px rgba(73, 229, 224, 0.2);
 }
 
 /* --- panels (SPCNET boxed readouts) --------------------------------------- */
@@ -293,25 +303,24 @@ hr {
 .panel {
 	position: relative;
 	border: 1px solid var(--line-2);
-	background:
-		linear-gradient(180deg, rgba(14, 23, 32, 0.9), rgba(8, 13, 19, 0.92));
+	background: linear-gradient(180deg, rgba(5, 9, 9, 0.9), rgba(0, 0, 0, 0.94));
 	padding: 16px;
 }
 
 .panel--lit {
 	border-color: var(--cyan-dim);
 	box-shadow:
-		inset 0 0 40px rgba(29, 138, 141, 0.07),
-		0 0 18px rgba(29, 138, 141, 0.08);
+		inset 0 0 40px rgba(34, 163, 168, 0.07),
+		0 0 18px rgba(34, 163, 168, 0.08);
 }
 
 .panel--alert {
 	border-color: var(--magenta-dim);
-	box-shadow: inset 0 0 40px rgba(153, 50, 95, 0.08);
+	box-shadow: inset 0 0 40px rgba(153, 35, 63, 0.08);
 }
 
 .panel--flat {
-	background: rgba(6, 10, 15, 0.7);
+	background: rgba(0, 0, 0, 0.7);
 }
 
 .panel__title {
@@ -323,7 +332,7 @@ hr {
 	font-size: 10px;
 	letter-spacing: 0.26em;
 	text-transform: uppercase;
-	color: var(--cyan-dim);
+	color: var(--ink-2);
 	white-space: nowrap;
 }
 
@@ -346,7 +355,7 @@ hr {
 	position: absolute;
 	width: 7px;
 	height: 7px;
-	border: 1px solid var(--cyan-dim);
+	border: 1px solid var(--line-bright);
 	pointer-events: none;
 }
 
@@ -440,8 +449,8 @@ hr {
 .btn:hover,
 .btn:focus-visible {
 	border-color: var(--cyan);
-	background: rgba(73, 229, 224, 0.1);
-	box-shadow: 0 0 14px rgba(73, 229, 224, 0.18);
+	background: rgba(79, 245, 240, 0.1);
+	box-shadow: 0 0 14px rgba(79, 245, 240, 0.18);
 	outline: none;
 }
 
@@ -451,7 +460,7 @@ hr {
 }
 
 .btn--solid {
-	background: rgba(73, 229, 224, 0.12);
+	background: rgba(79, 245, 240, 0.12);
 	border-color: var(--cyan-dim);
 }
 
@@ -463,8 +472,8 @@ hr {
 .btn--green:hover,
 .btn--green:focus-visible {
 	border-color: var(--green);
-	background: rgba(93, 255, 155, 0.1);
-	box-shadow: 0 0 14px rgba(93, 255, 155, 0.16);
+	background: rgba(79, 245, 240, 0.1);
+	box-shadow: 0 0 14px rgba(79, 245, 240, 0.16);
 }
 
 .btn--danger {
@@ -475,8 +484,8 @@ hr {
 .btn--danger:hover,
 .btn--danger:focus-visible {
 	border-color: var(--magenta);
-	background: rgba(255, 79, 163, 0.1);
-	box-shadow: 0 0 14px rgba(255, 79, 163, 0.2);
+	background: rgba(255, 56, 100, 0.1);
+	box-shadow: 0 0 14px rgba(255, 56, 100, 0.2);
 }
 
 .btn--ghost {
@@ -488,7 +497,7 @@ hr {
 .btn--ghost:focus-visible {
 	color: var(--ink);
 	border-color: var(--line-bright);
-	background: rgba(47, 127, 140, 0.08);
+	background: rgba(63, 160, 172, 0.08);
 	box-shadow: none;
 }
 
@@ -508,8 +517,8 @@ hr {
 .terminal {
 	border: 1px solid var(--green-dim);
 	background:
-		linear-gradient(180deg, rgba(10, 26, 18, 0.55), rgba(4, 10, 7, 0.75));
-	box-shadow: inset 0 0 50px rgba(45, 138, 86, 0.08);
+		linear-gradient(180deg, rgba(5, 15, 16, 0.55), rgba(0, 2, 2, 0.75));
+	box-shadow: inset 0 0 50px rgba(34, 163, 168, 0.08);
 	padding: 18px;
 	position: relative;
 }
@@ -521,7 +530,7 @@ hr {
 	top: -1px;
 	left: -1px;
 	background: var(--green-dim);
-	color: #04120a;
+	color: #041818;
 	font-size: 10px;
 	letter-spacing: 0.22em;
 	text-transform: uppercase;
@@ -573,7 +582,7 @@ textarea {
 	font-family: var(--mono);
 	font-size: 12px;
 	color: var(--green);
-	background: #030806;
+	background: #030a0a;
 	border: 1px solid var(--green-deep);
 	border-radius: 0;
 	padding: 8px 10px;
@@ -589,7 +598,7 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-	color: #1f5c3c;
+	color: #1a4248;
 }
 
 input:focus,
@@ -598,9 +607,9 @@ textarea:focus {
 	outline: none;
 	border-color: var(--green);
 	box-shadow:
-		0 0 0 1px rgba(93, 255, 155, 0.25),
-		0 0 16px rgba(93, 255, 155, 0.13);
-	background: #04110a;
+		0 0 0 1px rgba(79, 245, 240, 0.25),
+		0 0 16px rgba(79, 245, 240, 0.13);
+	background: #031818;
 }
 
 select {
@@ -616,7 +625,7 @@ select {
 }
 
 select option {
-	background: #03120a;
+	background: #031010;
 	color: var(--green);
 }
 
@@ -632,7 +641,7 @@ input[type='file']::file-selector-button {
 	letter-spacing: 0.16em;
 	text-transform: uppercase;
 	color: var(--green);
-	background: rgba(45, 138, 86, 0.14);
+	background: rgba(34, 163, 168, 0.14);
 	border: 1px solid var(--green-dim);
 	padding: 5px 10px;
 	margin-right: 12px;
@@ -640,7 +649,7 @@ input[type='file']::file-selector-button {
 }
 
 input[type='file']::file-selector-button:hover {
-	background: rgba(93, 255, 155, 0.2);
+	background: rgba(79, 245, 240, 0.2);
 }
 
 input[type='checkbox'] {
@@ -648,7 +657,7 @@ input[type='checkbox'] {
 	width: 14px;
 	height: 14px;
 	border: 1px solid var(--green-dim);
-	background: #030806;
+	background: #030a0a;
 	display: inline-grid;
 	place-content: center;
 	cursor: pointer;
@@ -701,7 +710,7 @@ input[type='checkbox']:checked::after {
 .flash {
 	border: 1px solid var(--line-2);
 	border-left: 2px solid var(--cyan);
-	background: rgba(13, 74, 82, 0.2);
+	background: rgba(12, 69, 76, 0.2);
 	padding: 9px 13px;
 	font-size: 11px;
 	letter-spacing: 0.08em;
@@ -710,16 +719,16 @@ input[type='checkbox']:checked::after {
 
 .flash--error {
 	border-left-color: var(--magenta);
-	background: rgba(153, 50, 95, 0.16);
+	background: rgba(153, 35, 63, 0.16);
 	border-color: var(--magenta-dim);
-	color: #ffd3e8;
+	color: #ffd6de;
 }
 
 .flash--ok {
 	border-left-color: var(--green);
-	background: rgba(45, 138, 86, 0.14);
+	background: rgba(34, 163, 168, 0.14);
 	border-color: var(--green-dim);
-	color: #d2ffe5;
+	color: #d4fbf8;
 }
 
 .empty {

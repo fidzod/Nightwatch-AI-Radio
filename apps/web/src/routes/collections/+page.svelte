@@ -82,11 +82,11 @@
 						<a class="jcard__name" href="/collections/{collection.id}">{collection.name}</a>
 						<div class="row" style="gap:6px">
 							{#if collection.mood_tag}
-								<span class="tag tag--magenta">{collection.mood_tag}</span>
+								<span class="tag">{collection.mood_tag}</span>
 							{:else}
 								<span class="tag tag--off">no mood tag</span>
 							{/if}
-							<span class="tag tag--cyan">{collection.track_count} TRK</span>
+							<span class="tag">{collection.track_count} TRK</span>
 							<span class="tag">{formatDuration(collection.total_seconds)}</span>
 						</div>
 					</header>
@@ -152,7 +152,7 @@
 		display: flex;
 		border: 1px solid var(--line-2);
 		background:
-			radial-gradient(120% 90% at 85% 0%, rgba(29, 138, 141, 0.12), transparent 60%),
+			radial-gradient(120% 90% at 85% 0%, rgba(34, 163, 168, 0.12), transparent 60%),
 			linear-gradient(170deg, rgba(10, 17, 25, 0.95), rgba(4, 6, 10, 0.98));
 		position: relative;
 		min-height: 260px;
@@ -178,7 +178,7 @@
 		padding: 14px 0;
 		writing-mode: vertical-rl;
 		text-orientation: mixed;
-		background: linear-gradient(90deg, rgba(153, 50, 95, 0.12), transparent);
+		background: linear-gradient(90deg, rgba(153, 35, 63, 0.12), transparent);
 	}
 
 	.jcard__spine-text {
@@ -186,8 +186,7 @@
 		font-size: 20px;
 		letter-spacing: 0.1em;
 		text-transform: uppercase;
-		color: var(--cyan);
-		text-shadow: var(--glow-cyan);
+		color: var(--ink);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -198,7 +197,7 @@
 		font-size: 8.5px;
 		letter-spacing: 0.3em;
 		text-transform: uppercase;
-		color: var(--magenta-dim);
+		color: var(--ink-3);
 		white-space: nowrap;
 	}
 
@@ -223,12 +222,6 @@
 		line-height: 1;
 		letter-spacing: 0.03em;
 		color: var(--bone);
-		text-shadow: 0 0 10px rgba(217, 221, 212, 0.18);
-	}
-
-	.jcard__name:hover {
-		color: var(--cyan);
-		text-shadow: var(--glow-cyan);
 	}
 
 	.jcard__desc {
@@ -254,7 +247,7 @@
 	}
 
 	.trk__n {
-		color: var(--magenta-dim);
+		color: var(--ink-3);
 		font-size: 9.5px;
 		letter-spacing: 0.1em;
 		min-width: 18px;
@@ -275,7 +268,7 @@
 	}
 
 	.trk__d {
-		color: var(--cyan-dim);
+		color: var(--ink-2);
 		font-size: 10.5px;
 	}
 
