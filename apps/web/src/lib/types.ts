@@ -14,6 +14,13 @@ export type Presenter = {
 	updated_at: string;
 };
 
+export type StationSettings = {
+	id: number;
+	/** ISO 3166-1 alpha-2, e.g. "GB". */
+	country: string;
+	updated_at: string;
+};
+
 export type Collection = {
 	id: number;
 	name: string;
@@ -64,10 +71,14 @@ export type StationState = {
 	id: number;
 	current_item_type: string | null;
 	current_item_ref: string | null;
+	/** Set only when current_item_type is 'music' — null for speech. */
+	current_item_artist: string | null;
 	current_item_started_at: string | null;
 	current_item_duration: number | null;
 	up_next_item_type: string | null;
 	up_next_item_ref: string | null;
+	/** Set only when up_next_item_type is 'music' — null for speech. */
+	up_next_item_artist: string | null;
 	current_presenter_id: number | null;
 	current_collection_id: number | null;
 	current_schedule_slot_id: number | null;

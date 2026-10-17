@@ -54,7 +54,13 @@ import type { ActiveSlot, Clock, TriggerType } from "./types.ts";
 export interface SchedulerDeps {
   clock?: Clock;
   random?: () => number;
+  /** Defaults to `MockNewsProvider` — see this class's constructor. The
+   *  production entry point (src/server.ts) passes a real
+   *  `GoogleNewsRssProvider` explicitly instead of the default being changed
+   *  here, specifically so src/test/simulateDay.ts (which constructs a
+   *  Scheduler with no news/weather deps) keeps never touching the network. */
   news?: NewsProvider;
+  /** Same story as `news` above, but `OpenMeteoWeatherProvider`. */
   weather?: WeatherProvider;
   /** Overridable so the simulation can exercise the rules without paying for
    *  Claude/ElevenLabs on every one of a day's moments. */
@@ -260,10 +266,12 @@ export class Scheduler {
       writeStationState({
         current_item_type: null,
         current_item_ref: null,
+        current_item_artist: null,
         current_item_started_at: null,
         current_item_duration: null,
         up_next_item_type: null,
         up_next_item_ref: null,
+        up_next_item_artist: null,
         current_presenter_id: null,
         current_collection_id: null,
         current_schedule_slot_id: null,
@@ -433,9 +441,9 @@ export class Scheduler {
         return { triggerType: "news", currentTime, dedupeKey, items };
       }
       case "weather": {
-        const reading = await this.weather.fetchCurrent();
-        if (reading === null) return null;
-        return { triggerType: "weather", currentTime, dedupeKey, reading };
+        const readings = await this.weather.fetchCurrent();
+        if (readings === null) return null;
+        return { triggerType: "weather", currentTime, dedupeKey, readings };
       }
       case "sign_off":
         return {
@@ -644,22 +652,37 @@ export class Scheduler {
       .sort((a, b) => a.fireAt.getTime() - b.fireAt.getTime())[0];
     const upNextTrack = this.music.upNext();
 
+    // A pending song_intro/changeover/filler isn't itself "the next thing" —
+    // it leads into (or plays alongside) whatever track is actually coming
+    // up, so it shouldn't win over that track in "Up Next". Only a standalone
+    // moment (news/weather/hour_open/sign_off — genuinely the next thing
+    // airing, independent of any song) should override the track readout.
+    const upNextSpeech =
+      upNextMoment && !TRACK_LEADIN_TRIGGERS.has(upNextMoment.triggerType)
+        ? upNextMoment
+        : undefined;
+
     const speech = this.airing;
     writeStationState({
       current_item_type: speech ? "speech" : served ? "music" : null,
+      // A bulletin shouldn't display its own generated transcript as "Now
+      // Playing" — every trigger type gets a short friendly label instead of
+      // the raw `triggerType: scriptText` it used to show.
       current_item_ref: speech
-        ? `${speech.triggerType}: ${truncate(speech.scriptText, 160)}`
+        ? SPEECH_LABELS[speech.triggerType]
         : (served?.track.title ?? null),
+      current_item_artist: speech ? null : (served?.track.artist ?? null),
       current_item_started_at: speech
         ? speech.startedAt.toISOString()
         : (served?.startedAt.toISOString() ?? null),
       current_item_duration: speech
         ? speech.durationSeconds
         : (served?.durationSeconds ?? null),
-      up_next_item_type: upNextMoment ? "speech" : upNextTrack ? "music" : null,
-      up_next_item_ref: upNextMoment
-        ? `${upNextMoment.triggerType} @ ${formatStationTime(upNextMoment.fireAt)}`
+      up_next_item_type: upNextSpeech ? "speech" : upNextTrack ? "music" : null,
+      up_next_item_ref: upNextSpeech
+        ? `${SPEECH_LABELS[upNextSpeech.triggerType]} @ ${formatStationTime(upNextSpeech.fireAt)}`
         : (upNextTrack?.title ?? null),
+      up_next_item_artist: upNextSpeech ? null : (upNextTrack?.artist ?? null),
       current_presenter_id: active.presenter.id,
       current_collection_id: active.collection.id,
       current_schedule_slot_id: active.slot.id,
@@ -667,6 +690,26 @@ export class Scheduler {
   }
 }
 
-function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
-}
+/** Short, friendly "Now Playing" / "Up Next" label for each trigger type — a
+ *  bulletin or intro should never surface its own generated transcript
+ *  there; the full script is still in generated_clips for anyone who wants it. */
+const SPEECH_LABELS: Record<TriggerType, string> = {
+  song_intro: "Song Intro",
+  changeover: "Handover",
+  hour_open: "Hour Open",
+  news: "News Bulletin",
+  weather: "Weather Update",
+  sign_off: "Sign-off",
+  filler: "Station ID",
+};
+
+/** Trigger types that air around a music boundary without being "a song"
+ *  themselves — song_intro, changeover and filler all lead into or
+ *  accompany whatever track plays next. news/weather/hour_open/sign_off are
+ *  standalone: they ARE the next thing airing, regardless of what's queued
+ *  musically, so those are the only ones allowed to override "Up Next". */
+const TRACK_LEADIN_TRIGGERS = new Set<TriggerType>([
+  "song_intro",
+  "changeover",
+  "filler",
+]);

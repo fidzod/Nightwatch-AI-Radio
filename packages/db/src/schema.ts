@@ -80,10 +80,12 @@ CREATE TABLE IF NOT EXISTS station_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   current_item_type TEXT,
   current_item_ref TEXT,
+  current_item_artist TEXT,
   current_item_started_at TEXT,
   current_item_duration REAL,
   up_next_item_type TEXT,
   up_next_item_ref TEXT,
+  up_next_item_artist TEXT,
   current_presenter_id INTEGER REFERENCES presenters(id),
   current_collection_id INTEGER REFERENCES collections(id),
   current_schedule_slot_id INTEGER REFERENCES schedule_slots(id),
@@ -114,4 +116,25 @@ CREATE TABLE IF NOT EXISTS weather_snapshots (
 
 export function applySchema(db: { exec(sql: string): void }): void {
   db.exec(SCHEMA_SQL);
+
+  // station_state gained artist columns after some DBs already existed.
+  // CREATE TABLE IF NOT EXISTS above is a no-op against those, so patch them
+  // in here. ALTER TABLE ADD COLUMN throws "duplicate column name" on a DB
+  // that already has it, which is exactly the no-op we want on every other
+  // boot, so it's simplest to just swallow that.
+  addColumnIfMissing(db, "station_state", "current_item_artist", "TEXT");
+  addColumnIfMissing(db, "station_state", "up_next_item_artist", "TEXT");
+}
+
+function addColumnIfMissing(
+  db: { exec(sql: string): void },
+  table: string,
+  column: string,
+  type: string,
+): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  } catch {
+    // Already has it. The common case on every boot after the first.
+  }
 }

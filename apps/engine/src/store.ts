@@ -48,28 +48,57 @@ export interface TrackRow {
   play_count: number;
 }
 
+interface AudioProbe {
+  duration_seconds: number | null;
+  title: string | null;
+  artist: string | null;
+}
+
 /**
- * Probe an audio file's duration with ffprobe (provided by the devShell).
- * Returns null rather than throwing — a missing duration is not worth failing
- * a seed over, and nothing in Phase 2 depends on it.
+ * Probe an audio file's duration and title/artist ID3 tags with ffprobe
+ * (provided by the devShell). Returns nulls rather than throwing — missing
+ * metadata is not worth failing a seed over.
+ *
+ * Mirrors apps/web/src/lib/server/audio.ts's `probeAudio` (same ffprobe
+ * flags, same JSON shape, same case-insensitive tag lookup) rather than
+ * sharing a helper package — apps/engine and apps/web are separate
+ * workspaces and this is the only thing between them that would want one,
+ * so a second ~20-line copy is more pragmatic than a new shared package.
  */
-function probeDurationSeconds(filePath: string): number | null {
+function probeAudioTags(filePath: string): AudioProbe {
   try {
     const out = execFileSync(
       "ffprobe",
       [
         "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
+        "-show_entries", "format=duration:format_tags=title,artist",
+        "-of", "json",
         filePath,
       ],
       { encoding: "utf8", timeout: 15_000 },
     );
-    const parsed = Number.parseFloat(out.trim());
-    return Number.isFinite(parsed) ? parsed : null;
+    const parsed = JSON.parse(out) as {
+      format?: { duration?: string; tags?: Record<string, string> };
+    };
+    const rawDuration = parsed.format?.duration;
+    const duration =
+      rawDuration === undefined ? NaN : Number.parseFloat(rawDuration);
+    return {
+      duration_seconds: Number.isFinite(duration) ? duration : null,
+      title: pickTag(parsed.format?.tags, "title"),
+      artist: pickTag(parsed.format?.tags, "artist"),
+    };
   } catch {
-    return null;
+    return { duration_seconds: null, title: null, artist: null };
   }
+}
+
+/** ID3 tag keys come back with inconsistent casing depending on the container. */
+function pickTag(tags: Record<string, string> | undefined, key: string): string | null {
+  if (!tags) return null;
+  const found = Object.entries(tags).find(([k]) => k.toLowerCase() === key);
+  const value = found?.[1]?.trim();
+  return value ? value : null;
 }
 
 function sha256(filePath: string): string {
@@ -121,8 +150,8 @@ export function seedCollectionFromDisk(collectionName: string): number {
 
   const insert = d.prepare(
     `INSERT INTO tracks
-       (collection_id, file_path, title, duration_seconds, sort_order, checksum)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+       (collection_id, file_path, title, artist, duration_seconds, sort_order, checksum)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   const findByPath = d.prepare(
     "SELECT id FROM tracks WHERE collection_id = ? AND file_path = ?",
@@ -139,11 +168,13 @@ export function seedCollectionFromDisk(collectionName: string): number {
     const checksum = sha256(absolute);
     if (findByChecksum.get(collectionId, checksum)) return; // same audio, renamed
 
+    const probe = probeAudioTags(absolute);
     insert.run(
       collectionId,
       absolute,
-      file.replace(/\.mp3$/i, ""),
-      probeDurationSeconds(absolute),
+      probe.title ?? file.replace(/\.mp3$/i, ""),
+      probe.artist,
+      probe.duration_seconds,
       index,
       checksum,
     );
@@ -375,10 +406,12 @@ export function updateClip(
 export interface StationStatePatch {
   current_item_type?: string | null;
   current_item_ref?: string | null;
+  current_item_artist?: string | null;
   current_item_started_at?: string | null;
   current_item_duration?: number | null;
   up_next_item_type?: string | null;
   up_next_item_ref?: string | null;
+  up_next_item_artist?: string | null;
   current_presenter_id?: number | null;
   current_collection_id?: number | null;
   current_schedule_slot_id?: number | null;
@@ -387,10 +420,12 @@ export interface StationStatePatch {
 const STATION_STATE_COLUMNS = [
   "current_item_type",
   "current_item_ref",
+  "current_item_artist",
   "current_item_started_at",
   "current_item_duration",
   "up_next_item_type",
   "up_next_item_ref",
+  "up_next_item_artist",
   "current_presenter_id",
   "current_collection_id",
   "current_schedule_slot_id",
@@ -476,4 +511,35 @@ export function countRows(table: "news_items" | "weather_snapshots" | "collectio
     .prepare(`SELECT COUNT(*) AS n FROM ${table}`)
     .get() as { n: number };
   return row.n;
+}
+
+// --- station_settings --------------------------------------------------------
+// The singleton row apps/web's /settings page writes (same id=1 pattern as
+// station_state above). The engine only ever reads it — the real news/weather
+// providers use the country to pick a language/locale and coordinates.
+
+export interface StationSettingsRow {
+  id: number;
+  country: string;
+  updated_at: string;
+}
+
+/**
+ * Reads the settings row, creating it with the schema's default ("GB") if it
+ * doesn't exist yet — mirrors writeStationState's upsert-on-read-or-write
+ * pattern, so the engine never has to special-case "no row yet".
+ */
+export function getStationSettings(): StationSettingsRow {
+  const d = getDb();
+  d.prepare(
+    `INSERT INTO station_settings (id) VALUES (1) ON CONFLICT(id) DO NOTHING`,
+  ).run();
+  return d
+    .prepare("SELECT id, country, updated_at FROM station_settings WHERE id = 1")
+    .get() as unknown as StationSettingsRow;
+}
+
+/** Convenience for callers that only want the ISO 3166-1 alpha-2 code. */
+export function getCountry(): string {
+  return getStationSettings().country;
 }

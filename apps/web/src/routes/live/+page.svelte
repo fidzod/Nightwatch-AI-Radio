@@ -165,13 +165,13 @@
 						{stationState?.current_item_ref ?? 'SILENT'}
 					</div>
 					<div class="now__meta">
-						<KV k="TYPE" v={stationState?.current_item_type?.toUpperCase() ?? null} tone="cyan" />
+						<KV k="TYPE" v={stationState?.current_item_type?.toUpperCase() ?? null} />
+						<KV k="ARTIST" v={stationState?.current_item_artist ?? null} />
 						<KV k="STARTED" v={clockOf(stationState?.current_item_started_at)} />
 						<KV k="LENGTH" v={formatDuration(stationState?.current_item_duration)} />
 						<KV
 							k="ELAPSED"
 							v={itemElapsed === null ? null : formatElapsed(itemElapsed)}
-							tone="cyan"
 						/>
 					</div>
 
@@ -188,8 +188,9 @@
 
 		<div class="grid-2">
 			<Panel title="UP NEXT">
-				<KV k="TYPE" v={stationState?.up_next_item_type?.toUpperCase() ?? null} tone="cyan" />
+				<KV k="TYPE" v={stationState?.up_next_item_type?.toUpperCase() ?? null} />
 				<KV k="REF" v={stationState?.up_next_item_ref ?? null} />
+				<KV k="ARTIST" v={stationState?.up_next_item_artist ?? null} />
 				<p class="mono-sm dim note">
 					{stationState?.up_next_item_ref
 						? 'Queued by the station engine.'
