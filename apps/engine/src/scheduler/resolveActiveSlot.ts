@@ -6,6 +6,7 @@
 //   - a 'date_override' slot beats a 'weekly' slot for a date it covers
 //   - higher `priority` wins within the same recurrence type
 //   - `enabled = 0` slots are invisible
+//   - slots whose presenter is missing or `active = 0` are invisible too
 //   - windows may wrap past midnight (21:00 -> 01:00 is one window, not two)
 //   - nothing covers "now" -> the station is off air (null), and /next-music
 //     answers 503 so LiquidSoap's `mksafe` fallback plays silence
@@ -120,6 +121,13 @@ export function resolveActiveSlot(
 
   for (const slot of snapshot.slots) {
     if (!slot.enabled) continue;
+    // A slot whose presenter has been retired (or deleted) is invisible,
+    // same as a disabled slot. Defense in depth: stale/duplicate slot sets
+    // left over from a renamed-away presenter must never out-rank the live
+    // roster on the id tie-break just because nobody got around to deleting
+    // them (see the legacy-presenter cleanup in backups/).
+    const slotPresenter = snapshot.presenters.get(slot.presenter_id);
+    if (!slotPresenter || !slotPresenter.active) continue;
     for (const window of windowsNear(slot, at)) {
       if (at.getTime() < window.start.getTime()) continue;
       if (at.getTime() >= window.end.getTime()) continue;

@@ -15,13 +15,16 @@ function count(db: DatabaseSync, table: string): number {
 }
 
 function seedPresenters(db: DatabaseSync) {
+	// First run only, gated on the table being completely empty rather than a
+	// per-name check — a per-name check resurrects a seed presenter the moment
+	// its name is freed up (deleted or renamed), which is exactly what happened
+	// to this station's roster once already.
+	if (count(db, 'presenters') > 0) return;
 	const insert = db.prepare(
 		`INSERT INTO presenters (name, station_role, tone_description, system_prompt, voice_archetype_notes)
 		 VALUES (?, ?, ?, ?, ?)`
 	);
-	const exists = db.prepare('SELECT id FROM presenters WHERE name = ?');
 	for (const p of PERSONA_SEEDS) {
-		if (exists.get(p.name)) continue;
 		insert.run(
 			p.name,
 			p.station_role,
@@ -88,13 +91,17 @@ function seedCollectionsFromDisk(db: DatabaseSync) {
 }
 
 function seedSchedule(db: DatabaseSync) {
+	// First run only (see seedPresenters) — otherwise clearing a presenter's
+	// slots (the "clear schedule slots" action on the Presenters page) would
+	// get silently undone on the next boot.
+	if (count(db, 'schedule_slots') > 0) return;
+
 	const collection = db.prepare('SELECT id FROM collections ORDER BY id LIMIT 1').get() as
 		| { id: number }
 		| undefined;
 	if (!collection) return; // nothing to point a slot at yet
 
 	const findPresenter = db.prepare('SELECT id FROM presenters WHERE name = ?');
-	const hasSlots = db.prepare('SELECT id FROM schedule_slots WHERE presenter_id = ? LIMIT 1');
 	const insert = db.prepare(
 		`INSERT INTO schedule_slots
 		   (recurrence_type, day_of_week, specific_date, start_time, end_time,
@@ -105,7 +112,6 @@ function seedSchedule(db: DatabaseSync) {
 	for (const slot of SLOT_SEEDS) {
 		const presenter = findPresenter.get(slot.presenter) as { id: number } | undefined;
 		if (!presenter) continue;
-		if (hasSlots.get(presenter.id)) continue; // already scheduled (by us or the engine)
 		for (let day = 0; day <= 6; day++) {
 			insert.run(day, slot.start_time, slot.end_time, presenter.id, collection.id);
 		}

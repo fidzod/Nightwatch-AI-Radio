@@ -79,6 +79,23 @@ export const actions: Actions = {
 		return { ok: `${values.name} updated — the engine picks this up on its next generation.` };
 	},
 
+	/**
+	 * Bulk-removes every schedule_slots row for one presenter in a single
+	 * action, so retiring a presenter doesn't require deleting slots one at a
+	 * time before `delete` will allow the presenter row itself to go.
+	 */
+	clearSlots: async ({ request }) => {
+		const form = await request.formData();
+		const id = Number(form.get('id'));
+		if (!Number.isInteger(id)) return fail(400, { error: 'Bad presenter id.' });
+
+		const presenter = one<{ name: string }>('SELECT name FROM presenters WHERE id = ?', id);
+		const result = run('DELETE FROM schedule_slots WHERE presenter_id = ?', id);
+		return {
+			ok: `Cleared ${result.changes} schedule slot(s) for ${presenter?.name ?? `presenter ${id}`}.`
+		};
+	},
+
 	delete: async ({ request }) => {
 		const form = await request.formData();
 		const id = Number(form.get('id'));

@@ -179,6 +179,32 @@
 								Blocked while slots or generated clips still reference them.
 							</span>
 						</form>
+
+						{#if usage.slot_count > 0}
+							<form
+								method="POST"
+								action="?/clearSlots"
+								use:enhance
+								class="dossier__danger"
+								onsubmit={(event) => {
+									if (
+										!confirm(
+											`Remove all ${usage.slot_count} schedule slot(s) for ${presenter.name}? This clears them from the schedule immediately.`
+										)
+									)
+										event.preventDefault();
+								}}
+							>
+								<input type="hidden" name="id" value={presenter.id} />
+								<button class="btn btn--sm btn--danger" type="submit">
+									✕ CLEAR {usage.slot_count} SCHEDULE SLOT(S)
+								</button>
+								<span class="mono-sm dim">
+									Bulk-remove every slot for this presenter in one step, instead of one at a time.
+									Then REMOVE FROM ROSTER is unblocked (unless clips still reference them).
+								</span>
+							</form>
+						{/if}
 					</div>
 				</details>
 			</article>
