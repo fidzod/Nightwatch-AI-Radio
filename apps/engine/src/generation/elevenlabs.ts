@@ -9,12 +9,6 @@
 //   200:     raw audio bytes (NOT JSON — errors are JSON, success is a file)
 // Flash is `eleven_flash_v2_5` (~75ms inference), chosen in plan decision #5
 // because clips are generated close to their delivery deadline.
-//
-// Voice selection: a real per-presenter voice hasn't been picked yet — the plan
-// leaves `presenters.elevenlabs_voice_id` nullable on purpose, to be chosen by
-// browsing the live ElevenLabs library against each persona's voice archetype.
-// `config.elevenLabsVoiceId` is a stock library voice, overridable via
-// ELEVENLABS_VOICE_ID, used only to prove the pipeline.
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
