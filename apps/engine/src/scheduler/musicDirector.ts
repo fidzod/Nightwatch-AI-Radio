@@ -83,6 +83,22 @@ export class MusicDirector {
    * — once there is a previously-prefetched track to promote — announces the
    * boundary at its end. Returns undefined when the active collection has no
    * tracks (caller answers 503 and LiquidSoap plays silence).
+   *
+   * Deliberately does NOT guess on a cold start (fresh process, nothing
+   * prefetched yet) by assuming the first track handed out is "playing now".
+   * An earlier version did exactly that, reasoning it was only wrong for a
+   * few seconds after a restart. It wasn't: when the engine restarts while
+   * LiquidSoap keeps running (the common case — redeploying the engine alone
+   * without touching LiquidSoap), LiquidSoap is mid-track already, and the
+   * guess desyncs this class's bookkeeping from reality. In production this
+   * caused a real track to get marked played and announced on air by the
+   * song-intro trigger *without ever actually being sent to LiquidSoap* —
+   * confirmed via `icecast.metadata` over telnet, which showed the stream
+   * jumping straight from the prior track to the one *after* the skipped
+   * one. A blank "current" for a few minutes after a restart, until the next
+   * real promotion, is a far smaller problem than that — so `current_`
+   * simply stays undefined until this class has an actual confirmed
+   * promotion to report, cold start or not.
    */
   take(active: ActiveSlot): TrackRow | undefined {
     const now = this.clock();
@@ -93,41 +109,12 @@ export class MusicDirector {
       this.promote(this.prefetched, now);
     }
 
-    // Cold start: a fresh process (or genuinely the station's first ever
-    // pull) has no memory of what's actually playing. There is no way to
-    // tell those two cases apart from here, but the right heuristic covers
-    // both: for a true first pull this guess is exactly correct (nothing
-    // was playing before, so what we hand out now starts right away); for a
-    // mid-stream engine restart it's a brief, self-correcting approximation
-    // — one cycle of showing the about-to-play track as current beats
-    // showing nothing for up to a full track's length.
-    const coldStart = this.current_ === undefined && this.prefetched === undefined;
-
     const next = pickNextTrack(active.collection.id, this.current_?.track.id);
     if (next === undefined) {
       this.prefetched = undefined;
       return undefined;
     }
     markTrackPlayed(next.id);
-
-    if (coldStart) {
-      const served = this.promote({ track: next, active }, now);
-      const following = pickNextTrack(active.collection.id, next.id);
-      if (following === undefined) {
-        this.prefetched = undefined;
-      } else {
-        markTrackPlayed(following.id);
-        this.prefetched = { track: following, active };
-      }
-      this.onBoundary({
-        at: served.endsAt,
-        endingTrack: next,
-        upcomingTrack: following,
-        active,
-      });
-      return next;
-    }
-
     this.prefetched = { track: next, active };
 
     if (this.current_ !== undefined) {
