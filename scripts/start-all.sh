@@ -23,6 +23,10 @@ log_dir="data/logs"
 mkdir -p "$log_dir"
 
 icecast_port="${ICECAST_PORT:-8000}"
+# Headless by default — this runs as a background station, not something
+# playing out of this machine's speakers. Set AIRADIO_MONITOR=1 yourself
+# before running this script if you do want local ALSA output too.
+export AIRADIO_MONITOR="${AIRADIO_MONITOR:-0}"
 
 pids=()
 cleanup() {
@@ -67,8 +71,15 @@ echo "-> engine"
 node --env-file-if-exists=.env apps/engine/src/server.ts > "$log_dir/engine.log" 2>&1 &
 pids+=("$!")
 
+if [ "$AIRADIO_MONITOR" = "0" ]; then
+  monitor_note="headless — local audio off, set AIRADIO_MONITOR=1 to enable it"
+else
+  monitor_note="local audio on (AIRADIO_MONITOR=1)"
+fi
+
 echo
-echo "Station running. Logs: $log_dir/{icecast,liquidsoap,engine}.log"
+echo "Station running ($monitor_note)."
+echo "Logs:    $log_dir/{icecast,liquidsoap,engine}.log"
 echo "Stream:  http://localhost:${icecast_port}/nightwatch.mp3"
 echo "Console: starting now — Ctrl+C here stops everything"
 echo
