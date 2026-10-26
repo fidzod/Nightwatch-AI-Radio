@@ -11,14 +11,17 @@
 
 import { config } from "./config.ts";
 import { formatStationTime } from "./generation/claude.ts";
+import { renderSpeech } from "./generation/elevenlabs.ts";
 import type { MomentContext } from "./generation/prompts.ts";
+import { pushToInjectQueue } from "./liquidsoapClient.ts";
 import type { MomentPlan } from "./moment.ts";
 import { countryInfoFor } from "./providers/countryData.ts";
 import { GoogleNewsRssProvider } from "./providers/googleNewsRssProvider.ts";
 import { OpenMeteoWeatherProvider } from "./providers/openMeteoWeatherProvider.ts";
 import { getCountry, loadScheduleSnapshot, pickNextTrack } from "./store.ts";
-import { resolveActiveSlot } from "./scheduler/resolveActiveSlot.ts";
+import { resolveActiveSlot, type ScheduleSnapshot } from "./scheduler/resolveActiveSlot.ts";
 import type {
+  ActiveSlot,
   CollectionRow,
   PresenterRow,
   TriggerType,
@@ -51,6 +54,31 @@ function findBy<T extends { id: number; name: string }>(
 }
 
 /**
+ * Shared by buildManualPlan and speakCustomMessage: whoever's on air now,
+ * unless overridden by `?presenter=`.
+ */
+function resolvePresenter(
+  snapshot: ScheduleSnapshot,
+  active: ActiveSlot | null,
+  presenterRef?: string | null,
+): PresenterRow {
+  let presenter: PresenterRow | undefined = active?.presenter;
+  if (presenterRef) {
+    presenter = findBy(snapshot.presenters.values(), presenterRef);
+    if (presenter === undefined) {
+      throw new ManualTriggerError(`No presenter matches "${presenterRef}".`);
+    }
+  }
+  presenter ??= [...snapshot.presenters.values()].find((p) => p.active === 1);
+  if (presenter === undefined) {
+    throw new ManualTriggerError(
+      "No presenters exist yet — create one on the web UI's Presenters page.",
+    );
+  }
+  return presenter;
+}
+
+/**
  * Builds a plan for one manually-triggered moment.
  *
  * Throws ManualTriggerError with an actionable message when the station has no
@@ -66,20 +94,7 @@ export async function buildManualPlan(args: {
   const now = args.now ?? new Date();
   const snapshot = loadScheduleSnapshot();
   const active = resolveActiveSlot(snapshot, now);
-
-  let presenter: PresenterRow | undefined = active?.presenter;
-  if (args.presenterRef) {
-    presenter = findBy(snapshot.presenters.values(), args.presenterRef);
-    if (presenter === undefined) {
-      throw new ManualTriggerError(`No presenter matches "${args.presenterRef}".`);
-    }
-  }
-  presenter ??= [...snapshot.presenters.values()].find((p) => p.active === 1);
-  if (presenter === undefined) {
-    throw new ManualTriggerError(
-      "No presenters exist yet — create one on the web UI's Presenters page.",
-    );
-  }
+  const presenter = resolvePresenter(snapshot, active, args.presenterRef);
 
   let collection: CollectionRow | undefined = active?.collection;
   if (args.collectionRef) {
@@ -195,5 +210,63 @@ async function buildManualContext(args: {
       }
       return { triggerType: "weather", currentTime, dedupeKey, readings };
     }
+  }
+}
+
+export interface SpeakResult {
+  presenterName: string;
+  status: "used" | "failed";
+  audioPath?: string;
+  durationSeconds?: number | null;
+  voiceId?: string;
+  requestId?: string;
+  error?: string;
+}
+
+/**
+ * Says literal text live, in the on-air presenter's voice — no Claude, no
+ * generated_clips row. This is a one-off ad-lib, not a scheduled moment type,
+ * so it deliberately sits outside the generate/deliver lifecycle the other
+ * seven triggers go through.
+ */
+export async function speakCustomMessage(args: {
+  text: string;
+  presenterRef?: string | null;
+  now?: Date;
+}): Promise<SpeakResult> {
+  const text = args.text.trim();
+  if (text.length === 0) {
+    throw new ManualTriggerError("?text= is required and can't be empty.");
+  }
+
+  const now = args.now ?? new Date();
+  const snapshot = loadScheduleSnapshot();
+  const active = resolveActiveSlot(snapshot, now);
+  const presenter = resolvePresenter(snapshot, active, args.presenterRef);
+
+  try {
+    const rendered = await renderSpeech({
+      text,
+      triggerType: "custom",
+      // Not a real generated_clips id (there isn't one) — just needs to be
+      // unique enough for the output filename.
+      clipId: now.getTime(),
+      voiceId: presenter.elevenlabs_voice_id ?? undefined,
+    });
+    const requestId = await pushToInjectQueue(rendered.audioPath);
+    return {
+      presenterName: presenter.name,
+      status: "used",
+      audioPath: rendered.audioPath,
+      durationSeconds: rendered.durationSeconds,
+      voiceId: rendered.voiceId,
+      requestId,
+    };
+  } catch (err) {
+    return {
+      presenterName: presenter.name,
+      status: "failed",
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }

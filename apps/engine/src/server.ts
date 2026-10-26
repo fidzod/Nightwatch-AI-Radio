@@ -8,16 +8,22 @@
 //   GET  /schedule/now      what the scheduler resolves for a given instant
 //                           (?at=ISO) — the quickest way to debug a schedule edit
 //   GET|POST /trigger/<type>  fire one moment on demand (any of the seven)
+//   GET|POST /speak         say literal ?text=... live, no Claude involved
 //
 // `/trigger/<type>` accepts:
 //   ?deliver=false    stop once the clip is 'ready' (no LiquidSoap push) —
 //                     what to use when iterating on prompt wording
 //   ?presenter=Thaddeus  speak as a specific presenter (id or name)
 //   ?collection=...   pretend a specific collection is playing
+//
+// `/speak` accepts:
+//   ?text=...         required, the exact words to say (not run through Claude)
+//   ?presenter=Thaddeus  speak as a specific presenter (id or name); defaults
+//                     to whoever's on air now
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { config } from "./config.ts";
-import { ManualTriggerError, buildManualPlan } from "./manual.ts";
+import { ManualTriggerError, buildManualPlan, speakCustomMessage } from "./manual.ts";
 import { runMoment } from "./moment.ts";
 import { countryInfoFor } from "./providers/countryData.ts";
 import { GoogleNewsRssProvider } from "./providers/googleNewsRssProvider.ts";
@@ -163,6 +169,28 @@ async function handleTrigger(
   }
 }
 
+async function handleSpeak(url: URL, res: ServerResponse): Promise<void> {
+  const text = url.searchParams.get("text");
+  if (text === null) {
+    sendJson(res, 400, { error: "?text= is required." });
+    return;
+  }
+
+  try {
+    const result = await speakCustomMessage({
+      text,
+      presenterRef: url.searchParams.get("presenter"),
+    });
+    sendJson(res, result.status === "failed" ? 502 : 200, result);
+  } catch (err) {
+    if (err instanceof ManualTriggerError) {
+      sendJson(res, 400, { error: err.message });
+      return;
+    }
+    throw err;
+  }
+}
+
 function handleScheduleNow(url: URL, res: ServerResponse): void {
   const atParam = url.searchParams.get("at");
   const at = atParam ? new Date(atParam) : new Date();
@@ -222,6 +250,16 @@ const server = createServer(
     const trigger = /^\/trigger\/([a-z_]+)$/.exec(url.pathname);
     if (trigger && (req.method === "POST" || req.method === "GET")) {
       handleTrigger(trigger[1]!, url, res).catch((err: unknown) => {
+        console.error(`[server] ${url.pathname} crashed —`, err);
+        sendJson(res, 500, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      return;
+    }
+
+    if (url.pathname === "/speak" && (req.method === "POST" || req.method === "GET")) {
+      handleSpeak(url, res).catch((err: unknown) => {
         console.error(`[server] ${url.pathname} crashed —`, err);
         sendJson(res, 500, {
           error: err instanceof Error ? err.message : String(err),
