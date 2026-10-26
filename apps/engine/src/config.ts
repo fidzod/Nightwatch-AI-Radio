@@ -149,8 +149,8 @@ export const config = {
   /** Minimum gap between two probabilistic clips, so they never land
    *  back-to-back on consecutive short tracks. */
   probabilisticCooldownSeconds: floatEnv("PROBABILISTIC_COOLDOWN_SECONDS", 240),
-  /** How many mock headlines a news read is built from (template says 2-4). */
-  newsItemCount: intEnv("NEWS_ITEM_COUNT", 3),
+  /** How many headlines a news read is built from. */
+  newsItemCount: intEnv("NEWS_ITEM_COUNT", 4),
 
   /** When > 0, the server fires a filler generation on this interval. A Phase 2
    *  debug hook, kept because it is still the quickest way to smoke-test the

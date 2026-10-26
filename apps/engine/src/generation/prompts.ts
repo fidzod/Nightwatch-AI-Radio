@@ -131,7 +131,7 @@ Write a 1-2 sentence hour marker to lead into the news. Should feel like a small
 Raw news items (do not alter facts, just deliver in your voice):
 ${formatNewsForPrompt(ctx.items)}
 
-Write a spoken news read, roughly 20-40 seconds long. Deliver items in order of what a listener would most want to know first. No sensationalism. If an item is grim, don't soften the facts, just don't editorialize.`;
+Write a spoken news read, roughly 35-60 seconds long. Deliver items in order of what a listener would most want to know first. No sensationalism. If an item is grim, don't soften the facts, just don't editorialize. Don't state the time, the hour marker just gave it. The weather follows immediately after this, so don't hand back to the music or signal that this segment is over.`;
 
     case "weather": {
       const multi = ctx.readings.length > 1;
@@ -139,7 +139,7 @@ Write a spoken news read, roughly 20-40 seconds long. Deliver items in order of 
 Raw weather data${multi ? " (several regions — summarize the overall picture, don't just list cities)" : ""}:
 ${formatWeatherForPrompt(ctx.readings)}
 
-Write a 2-3 sentence weather read, practical but in character.`;
+Write a 2-3 sentence weather read, practical but in character. Don't state the time, the hour marker just gave it.`;
     }
 
     case "sign_off":

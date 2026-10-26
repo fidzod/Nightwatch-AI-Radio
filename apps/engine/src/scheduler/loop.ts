@@ -84,9 +84,14 @@ interface PendingMoment {
 }
 
 interface AiringSpeech {
+  /** Set only for a chain member (the hour triad). Lets a later member
+   *  extend this same window instead of starting a fresh one. */
+  chainId?: string;
   triggerType: TriggerType;
   scriptText: string;
   startedAt: Date;
+  /** For a chain, this accumulates across all delivered members so far, not
+   *  just the most recent one's own clip length. */
   durationSeconds: number | null;
   until: Date;
 }
@@ -570,31 +575,40 @@ export class Scheduler {
           a.fireAt.getTime() - b.fireAt.getTime() || a.chainIndex - b.chainIndex,
       );
 
-    // A whole chain can be pushed in one tick (the triad is three clips). The
-    // inject queue plays them in order, so `station_state` should name the FIRST
-    // one as what's on air and hold that for the chain's combined length —
-    // otherwise the live page would claim the weather is playing while the hour
-    // marker is still being read.
-    let airingHead: PendingMoment | undefined;
-    let airingSeconds = 0;
-
+    // Chain members (the hour triad) almost never land in the same tick in
+    // practice: chainReady only clears once the earlier member has left
+    // `pending` entirely, which happens on the NEXT tick at the soonest. So
+    // each member typically arrives via its own separate call to this
+    // function. If `this.airing` were simply overwritten on every delivery,
+    // the display would jump straight to "weather" the moment it's pushed
+    // (seconds into the hour marker's real playback) and then clear again
+    // once weather's own short window elapses, well before the bulletin has
+    // actually finished airing. Extending the existing window for a later
+    // member of the SAME chain, instead of replacing it, is what keeps the
+    // display stable and accurate for the chain's whole combined length.
     for (const moment of due) {
       const requestId = await this.deliver(moment.clipId!, moment.audioPath!);
       if (requestId === null) continue; // stays 'ready'; dropStale gives up later
       moment.state = "aired";
       delivered.push(moment.triggerType);
-      airingHead ??= moment;
-      airingSeconds += moment.durationSeconds ?? 12;
-    }
 
-    if (airingHead !== undefined) {
-      this.airing = {
-        triggerType: airingHead.triggerType,
-        scriptText: airingHead.scriptText ?? "",
-        startedAt: now,
-        durationSeconds: airingHead.durationSeconds ?? null,
-        until: new Date(now.getTime() + (airingSeconds + 3) * 1000),
-      };
+      const clipSeconds = moment.durationSeconds ?? 12;
+      if (moment.chainId !== undefined && this.airing?.chainId === moment.chainId) {
+        this.airing = {
+          ...this.airing,
+          durationSeconds: (this.airing.durationSeconds ?? 0) + clipSeconds,
+          until: new Date(this.airing.until.getTime() + clipSeconds * 1000),
+        };
+      } else {
+        this.airing = {
+          chainId: moment.chainId,
+          triggerType: moment.triggerType,
+          scriptText: moment.scriptText ?? "",
+          startedAt: now,
+          durationSeconds: clipSeconds,
+          until: new Date(now.getTime() + (clipSeconds + 3) * 1000),
+        };
+      }
     }
 
     this.pending = this.pending.filter((p) => p.state !== "aired");
@@ -667,9 +681,11 @@ export class Scheduler {
       current_item_type: speech ? "speech" : served ? "music" : null,
       // A bulletin shouldn't display its own generated transcript as "Now
       // Playing" — every trigger type gets a short friendly label instead of
-      // the raw `triggerType: scriptText` it used to show.
+      // the raw `triggerType: scriptText` it used to show. A chain member
+      // (the hour triad) shows one stable label for the whole bulletin
+      // rather than flickering through each sub-part's own label.
       current_item_ref: speech
-        ? SPEECH_LABELS[speech.triggerType]
+        ? (speech.chainId !== undefined ? CHAIN_LABEL : SPEECH_LABELS[speech.triggerType])
         : (served?.track.title ?? null),
       current_item_artist: speech ? null : (served?.track.artist ?? null),
       current_item_started_at: speech
@@ -689,6 +705,11 @@ export class Scheduler {
     });
   }
 }
+
+/** "Now Playing" for any member of the hour triad while it's airing, instead
+ *  of flickering through "Hour Open" / "News Bulletin" / "Weather Update" as
+ *  each sub-part is individually delivered (see deliverDue). */
+const CHAIN_LABEL = "Hourly Bulletin";
 
 /** Short, friendly "Now Playing" / "Up Next" label for each trigger type — a
  *  bulletin or intro should never surface its own generated transcript
