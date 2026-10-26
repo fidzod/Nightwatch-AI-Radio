@@ -53,6 +53,11 @@ export interface TriggerCandidate {
   chainIndex: number;
   /** changeover only: the collection being handed off from. */
   outgoingCollectionName?: string;
+  /** changeover only: true when this handoff lands on the hour and is
+   *  standing in for the separate hour-open moment (see collectDeterministic)
+   *  — the incoming presenter should mark the time and lead into news rather
+   *  than just mark the mood shift. */
+  leadsIntoNews?: boolean;
 }
 
 function iso(d: Date): string {
@@ -105,49 +110,70 @@ export function collectDeterministic(
     }
   }
 
+  // --- hour open -> news -> weather, as one chain --------------------------
+  // Computed before the changeover block below, which needs to know whether
+  // it's landing on the hour.
+  const hourAt = nextTopOfHour(now);
+  const hourActive =
+    hourAt.getTime() <= horizonEnd ? resolveActiveSlot(snapshot, hourAt) : null;
+
   // --- changeover: presenter or collection actually changes ----------------
   const change = nextScheduleChange(snapshot, now, horizonMs);
-  if (
+  const realChange =
     change !== null &&
     change.before !== null &&
     change.after !== null &&
     !sameAir(change.before, change.after)
-  ) {
+      ? { at: change.at, before: change.before, after: change.after }
+      : null;
+
+  // A handoff landing on (or within the stack guard of) the hour absorbs the
+  // separate hour-open moment instead of losing the bulletin to it: one
+  // changeover, spoken by the incoming presenter, that also marks the hour
+  // and leads into news. See suppressStacked for why this would otherwise
+  // drop the whole triad (changeover outranks hour_open on priority).
+  const absorbsHour =
+    realChange !== null &&
+    hourActive !== null &&
+    Math.abs(realChange.at.getTime() - hourAt.getTime()) <
+      config.stackGuardSeconds * 1000;
+
+  if (realChange !== null) {
     candidates.push({
       triggerType: "changeover",
-      dedupeKey: `changeover:${iso(change.at)}`,
+      dedupeKey: `changeover:${iso(realChange.at)}`,
       // Airs at the boundary itself: the handoff marks the change, it doesn't
       // pre-announce it. Generation starts up to `lookaheadSeconds` earlier,
       // which covers the plan's "pre-rendered ~60-90s ahead".
-      fireAt: change.at,
+      fireAt: absorbsHour ? hourAt : realChange.at,
       priority: PRIORITY.changeover,
       // The incoming presenter speaks — by the time it airs the hour is
       // theirs, and the template is written from the arriving side.
-      active: change.after,
+      active: absorbsHour ? hourActive! : realChange.after,
+      chainId: absorbsHour ? `hour:${iso(hourAt)}` : undefined,
       chainIndex: 0,
-      outgoingCollectionName: change.before.collection.name,
+      outgoingCollectionName: realChange.before.collection.name,
+      leadsIntoNews: absorbsHour,
     });
   }
 
-  // --- hour open -> news -> weather, as one chain --------------------------
-  const hourAt = nextTopOfHour(now);
-  if (hourAt.getTime() <= horizonEnd) {
-    const hourActive = resolveActiveSlot(snapshot, hourAt);
-    if (hourActive !== null) {
-      const chainId = `hour:${iso(hourAt)}`;
-      const triad: TriggerType[] = ["hour_open", "news", "weather"];
-      triad.forEach((triggerType, chainIndex) => {
-        candidates.push({
-          triggerType,
-          dedupeKey: `${triggerType}:${iso(hourAt)}`,
-          fireAt: hourAt,
-          priority: PRIORITY[triggerType],
-          active: hourActive,
-          chainId,
-          chainIndex,
-        });
+  if (hourActive !== null) {
+    const chainId = `hour:${iso(hourAt)}`;
+    const triad: TriggerType[] = absorbsHour
+      ? ["news", "weather"]
+      : ["hour_open", "news", "weather"];
+    const startIndex = absorbsHour ? 1 : 0;
+    triad.forEach((triggerType, offset) => {
+      candidates.push({
+        triggerType,
+        dedupeKey: `${triggerType}:${iso(hourAt)}`,
+        fireAt: hourAt,
+        priority: PRIORITY[triggerType],
+        active: hourActive,
+        chainId,
+        chainIndex: startIndex + offset,
       });
-    }
+    });
   }
 
   return suppressStacked(candidates);

@@ -432,6 +432,7 @@ export class Scheduler {
           oldPlaylistName: candidate.outgoingCollectionName ?? "the last hour",
           newPlaylistName: collection.name,
           moodTag: collection.mood_tag,
+          leadsIntoNews: candidate.leadsIntoNews,
         };
       case "hour_open":
         return {

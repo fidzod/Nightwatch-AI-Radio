@@ -380,17 +380,38 @@ async function main(): Promise<void> {
     triadHours.join(",") === "20:00:00,21:00:00",
     triadHours.join(", "),
   );
+
+  // A changeover landing on the hour absorbs hour-open rather than losing
+  // the bulletin to it — see triggerRules.ts's `absorbsHour`.
+  const isAbsorbingChangeover = (c: {
+    trigger_type: string;
+    context_json: string;
+  }) =>
+    c.trigger_type === "changeover" &&
+    Boolean(JSON.parse(c.context_json).leadsIntoNews);
+  const absorbingChangeovers = clips.filter(isAbsorbingChangeover);
+  const hourMarkerTimes = [
+    ...triadHours,
+    ...absorbingChangeovers.map((c) => localTime(fireAtOf(c))),
+  ].sort();
+
   check(
-    "news and weather are chained to every hour-open, 1:1:1",
-    of("news").length === of("hour_open").length &&
-      of("weather").length === of("hour_open").length &&
-      times("news").join(",") === triadHours.join(",") &&
-      times("weather").join(",") === triadHours.join(","),
-    `${of("hour_open").length}/${of("news").length}/${of("weather").length}`,
+    "news and weather are chained to every hour marker (hour-open or an absorbing changeover), 1:1:1",
+    of("news").length === hourMarkerTimes.length &&
+      of("weather").length === hourMarkerTimes.length &&
+      times("news").join(",") === hourMarkerTimes.join(",") &&
+      times("weather").join(",") === hourMarkerTimes.join(","),
+    `${hourMarkerTimes.length} markers -> ${of("news").length}/${of("weather").length}`,
   );
   check(
-    "no hour triad at the changeover hours (22:00, 23:00)",
-    !triadHours.includes("22:00:00") && !triadHours.includes("23:00:00"),
+    "a changeover on the hour absorbs hour-open (none separately at 22:00/23:00) but still chains news+weather",
+    !triadHours.includes("22:00:00") &&
+      !triadHours.includes("23:00:00") &&
+      absorbingChangeovers.length === 2 &&
+      ["22:00:00", "23:00:00"].every(
+        (t) => times("news").includes(t) && times("weather").includes(t),
+      ),
+    `absorbing changeovers: ${absorbingChangeovers.map((c) => localTime(fireAtOf(c))).join(", ") || "none"}`,
   );
   check(
     "exactly one sign-off, 30s before the broadcast day ends",
@@ -428,7 +449,10 @@ async function main(): Promise<void> {
   const chainOf = (c: { context_json: string; trigger_type: string }) => {
     const key = JSON.parse(c.context_json).dedupeKey as string;
     const instant = key.slice(key.indexOf(":") + 1);
-    return ["hour_open", "news", "weather"].includes(c.trigger_type)
+    // An absorbing changeover is chain-head for this same hour segment, so it
+    // groups with news/weather here too, not as its own standalone segment.
+    return ["hour_open", "news", "weather"].includes(c.trigger_type) ||
+      isAbsorbingChangeover(c)
       ? `hour:${instant}`
       : `${c.trigger_type}:${instant}`;
   };
@@ -448,15 +472,18 @@ async function main(): Promise<void> {
     tooClose ?? `${deterministic.length} deterministic clips checked`,
   );
 
-  const triadDeliveries = deliveries.filter((d) =>
-    ["hour_open", "news", "weather"].includes(d.triggerType),
-  );
+  const clipById = new Map(clips.map((c) => [c.id, c]));
+  const triadDeliveries = deliveries.filter((d) => {
+    if (["hour_open", "news", "weather"].includes(d.triggerType)) return true;
+    const clip = clipById.get(d.clipId);
+    return clip !== undefined && isAbsorbingChangeover(clip);
+  });
   check(
-    "the triad airs in order: hour_open -> news -> weather",
+    "the triad airs in order, an absorbing changeover standing in for hour-open where one occurs",
     triadDeliveries
       .map((d) => d.triggerType)
       .join(",")
-      .replace(/(hour_open,news,weather)(,)?/g, "") === "",
+      .replace(/((?:hour_open|changeover),news,weather)(,)?/g, "") === "",
     triadDeliveries.map((d) => d.triggerType).join(", "),
   );
 

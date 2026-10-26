@@ -41,6 +41,9 @@ export interface ChangeoverContext extends BaseContext {
   oldPlaylistName: string;
   newPlaylistName: string;
   moodTag: string | null;
+  /** True when this handoff lands on the hour and is standing in for the
+   *  separate hour-open moment — see triggerRules.ts's `absorbsHour`. */
+  leadsIntoNews?: boolean;
 }
 
 export interface HourOpenContext extends BaseContext {
@@ -118,7 +121,11 @@ Outgoing collection: ${ctx.oldPlaylistName}
 Incoming collection: ${ctx.newPlaylistName}
 Vibe tag: ${vibe(ctx.moodTag)}
 
-Write a short 2-3 sentence handoff letting the listener know the mood is shifting. Don't explain why — just mark the change, the way a DJ would.`;
+Write a short 2-3 sentence handoff letting the listener know the mood is shifting. Don't explain why — just mark the change, the way a DJ would.${
+        ctx.leadsIntoNews
+          ? " This also marks the top of the hour: work the time in naturally and lead into the news, the way the hour marker normally would."
+          : ""
+      }`;
 
     case "hour_open":
       return `Time: ${ctx.currentTime}, exactly on the hour
