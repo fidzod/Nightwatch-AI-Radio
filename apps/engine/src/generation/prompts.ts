@@ -138,7 +138,7 @@ Write a 1-2 sentence hour marker to lead into the news. Should feel like a small
 Raw news items (do not alter facts, just deliver in your voice):
 ${formatNewsForPrompt(ctx.items)}
 
-Write a spoken news read, roughly 35-60 seconds long. Deliver items in order of what a listener would most want to know first. No sensationalism. If an item is grim, don't soften the facts, just don't editorialize. Don't state the time, the hour marker just gave it. The weather follows immediately after this, so don't hand back to the music or signal that this segment is over.`;
+Write a spoken news read, roughly 35-60 seconds long. There's more here than fits: choose the 3 or 4 that matter most, over soft or local-interest stories, unless nothing weightier is on the list. Weight war and conflict highest, then politics, the economy, and other major events. Deliver the ones you choose in order of what a listener would most want to know first. No sensationalism. If an item is grim, don't soften the facts, just don't editorialize. Don't state the time, the hour marker just gave it. The weather follows immediately after this, so don't hand back to the music or signal that this segment is over.`;
 
     case "weather": {
       const multi = ctx.readings.length > 1;

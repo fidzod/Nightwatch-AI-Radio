@@ -419,10 +419,12 @@ async function main(): Promise<void> {
     times("sign_off").join(", "),
   );
   check(
-    "news clips carry 2-4 real headlines from the provider",
+    // The pool is a selection pot for the prompt (it picks the 3-4 that
+    // matter most), not a literal read count — see config.newsItemCount.
+    `news clips carry a real headline pool from the provider (2-${config.newsItemCount} items)`,
     of("news").every((c) => {
       const items = JSON.parse(c.context_json).items as unknown[];
-      return items.length >= 2 && items.length <= 4;
+      return items.length >= 2 && items.length <= config.newsItemCount;
     }),
     `${JSON.parse(of("news")[0]?.context_json ?? "{}").items?.length ?? 0} items`,
   );

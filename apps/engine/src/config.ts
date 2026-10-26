@@ -149,8 +149,12 @@ export const config = {
   /** Minimum gap between two probabilistic clips, so they never land
    *  back-to-back on consecutive short tracks. */
   probabilisticCooldownSeconds: floatEnv("PROBABILISTIC_COOLDOWN_SECONDS", 240),
-  /** How many headlines a news read is built from. */
-  newsItemCount: intEnv("NEWS_ITEM_COUNT", 4),
+  /** Size of the raw headline pool handed to the news prompt — Claude picks
+   *  the 3-4 most consequential from this set, it isn't a literal read count
+   *  (Google News' feed order is recency, not importance, so a small literal
+   *  slice was handing over whatever happened to be newest, soft local
+   *  stories included). */
+  newsItemCount: intEnv("NEWS_ITEM_COUNT", 10),
 
   /** When > 0, the server fires a filler generation on this interval. A Phase 2
    *  debug hook, kept because it is still the quickest way to smoke-test the
