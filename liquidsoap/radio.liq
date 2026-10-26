@@ -15,17 +15,19 @@
 ##                 once it's ready. `interactive` defaults to true, which is
 ##                 what registers that telnet command.
 ##
-## Combined with `fallback(track_sensitive=false, ...)`. The
-## `track_sensitive=false` is load-bearing: it lets a pushed clip be picked up
-## at the next track boundary without ever interrupting an in-progress
-## crossfade.
+## Combined with `smooth_add`: music is the `normal` source, speech is
+## `special`. When nothing is queued on `inject`, the output is just music at
+## full volume. The moment a clip is pushed, music fades DOWN to a quiet
+## background bed (not silence) and the clip plays on top of it, then music
+## fades back up once the queue empties again — a DJ-voice-over-music duck,
+## not an either/or switch.
 ##
 ## IMPORTANT — crossfade placement. There is a documented LiquidSoap issue
 ## where crossfading breaks *after* a `request.queue` item plays through a
-## `fallback`. The mitigation, and the reason the graph is shaped this way, is
-## to apply `crossfade` to each leaf source INDIVIDUALLY *before* combining
-## them. Do not "simplify" this to `crossfade(fallback([...]))` — that is the
-## broken pattern.
+## `fallback`/combinator. The mitigation, and the reason the graph is shaped
+## this way, is to apply `crossfade` to each leaf source INDIVIDUALLY *before*
+## combining them. Do not "simplify" this to `crossfade(smooth_add(...))` —
+## that is the broken pattern.
 ##
 ## The static/fuzz layer then wraps the final combined source, so it doesn't
 ## know or care whether music or speech is currently playing.
@@ -96,20 +98,21 @@ music = request.dynamic(id="music", retry_delay=5., next_music)
 inject = request.queue(id="inject")
 
 # --- combine -----------------------------------------------------------------
-# crossfade per leaf, THEN fallback (see the note at the top of this file).
+# crossfade per leaf, THEN smooth_add (see the note at the top of this file).
 
 program =
-  fallback(
-    id="program",
-    track_sensitive=false,
-    [
-      # Speech clips are back-to-back, independently-rendered files, not a
-      # continuous musical bed — a music-style blend overlaps the end of one
-      # clip with the start of the next, cutting both short. Near-zero
-      # duration/fade_in/fade_out gives a clean cut instead.
-      crossfade(id="inject_xfade", duration=0.2, fade_in=0.05, fade_out=0.05, inject),
-      crossfade(id="music_xfade", music)
-    ]
+  smooth_add(
+    # Portion of music's amplitude kept under speech — present as a bed, not
+    # buried. Faded over 1.5s each way rather than the 1s default, to match
+    # the station's unhurried pace.
+    p=0.18,
+    duration=1.5,
+    normal=crossfade(id="music_xfade", music),
+    # Speech clips are back-to-back, independently-rendered files, not a
+    # continuous musical bed — a music-style blend overlaps the end of one
+    # clip with the start of the next, cutting both short. Near-zero
+    # duration/fade_in/fade_out gives a clean cut instead.
+    special=crossfade(id="inject_xfade", duration=0.2, fade_in=0.05, fade_out=0.05, inject)
   )
 
 # Both leaves are fallible (the engine may be down, the inject queue is empty
